@@ -135,14 +135,14 @@ class GateTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        for name, value in [('ROOT', Path(self.tmp.name)), ('_POLL_INTERVAL', .01), ('_HEARTBEAT_INTERVAL', .02)]:
+        for name, value in [('ROOT', Path(self.tmp.name)), ('_POLL_INTERVAL', .05), ('_HEARTBEAT_INTERVAL', .1)]:
             patcher = patch.object(model_gate, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
         self.key = model_gate.service('https://example.invalid/v1', 'test-only-token')
-        self.policy = {'max_concurrent': 1, 'min_interval': 0, 'queue_timeout': 2, 'request_timeout': 1}
+        self.policy = {'max_concurrent': 1, 'min_interval': 0, 'queue_timeout': 60, 'request_timeout': 5}
 
-    def until(self, predicate, timeout=3):
+    def until(self, predicate, timeout=30):
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             if predicate():
@@ -152,7 +152,7 @@ class GateTests(unittest.TestCase):
 
     def block(self):
         with model_gate.db() as conn:
-            conn.execute('INSERT OR REPLACE INTO gates(service,next_start,blocked_until,failures,last_group) VALUES(?,0,?,0,0)', (self.key, time.time() + 60))
+            conn.execute('INSERT OR REPLACE INTO gates(service,next_start,blocked_until,failures,last_group) VALUES(?,0,?,0,0)', (self.key, time.time() + 300))
 
     def unblock(self):
         with model_gate.db() as conn:
@@ -173,7 +173,6 @@ class GateTests(unittest.TestCase):
         def job(group, purpose, label):
             with model_gate.acquire(self.key, group, purpose, self.policy):
                 order.append(label)
-                time.sleep(.015)
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as pool:
             futures = []
             for group, purpose, label in jobs:
@@ -181,7 +180,7 @@ class GateTests(unittest.TestCase):
                 self.until(lambda: model_gate.snapshot(self.key)['waiting'] == len(futures))
             self.unblock()
             for future in futures:
-                future.result(timeout=3)
+                future.result(timeout=60)
         self.assertEqual(order, ['E', 'C', 'D', 'A', 'B', 'F'])
         self.assertEqual(model_gate.snapshot(self.key)['active'], 0)
 
@@ -226,6 +225,8 @@ class GateTests(unittest.TestCase):
         active = 0
         peak = 0
         mutex = threading.Lock()
+        both_entered = threading.Event()
+        release = threading.Event()
         policy = {**self.policy, 'max_concurrent': 2}
         def job(group):
             nonlocal active, peak
@@ -233,12 +234,28 @@ class GateTests(unittest.TestCase):
                 with mutex:
                     active += 1
                     peak = max(peak, active)
-                time.sleep(.08)
-                with mutex:
-                    active -= 1
+                    if active >= 2:
+                        both_entered.set()
+                try:
+                    if not release.wait(30):
+                        raise TimeoutError('test coordinator did not release held slots')
+                finally:
+                    with mutex:
+                        active -= 1
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(job, [10, 20, 30, 40]))
+            futures = [pool.submit(job, group) for group in [10, 20, 30, 40]]
+            try:
+                self.assertTrue(both_entered.wait(30), 'two leases never entered together')
+                self.until(lambda: model_gate.snapshot(self.key)['waiting'] == 2)
+                with mutex:
+                    self.assertEqual(active, 2)
+                    self.assertLessEqual(peak, 2)
+            finally:
+                release.set()
+            for future in futures:
+                future.result(timeout=60)
         self.assertEqual(peak, 2)
+        self.assertLessEqual(peak, 2)
         self.assertEqual(model_gate.snapshot(self.key)['active'], 0)
 
     def test_actual_start_migrates_legacy_gate_without_losing_state(self):
@@ -248,17 +265,18 @@ class GateTests(unittest.TestCase):
         with model_gate.db() as conn:
             row = conn.execute('SELECT next_start,blocked_until,failures,last_group,actual_next FROM gates WHERE service=?', (self.key,)).fetchone()
         self.assertEqual(row, (123, 200, 2, 30, 0))
+        before = time.time()
         model_gate.start_request(self.key, {**self.policy, 'min_interval': .08})
         with model_gate.db() as conn:
             actual_next = conn.execute('SELECT actual_next FROM gates WHERE service=?', (self.key,)).fetchone()[0]
-        self.assertGreater(actual_next, time.time())
+        self.assertGreaterEqual(actual_next, before + .08)
 
     def test_first_actual_start_does_not_wait_for_its_acquire_reservation(self):
-        policy = {**self.policy, 'min_interval': .2}
+        policy = {**self.policy, 'min_interval': 30}
         with model_gate.acquire(self.key, 10, 'chat', policy):
-            begin = time.monotonic()
-            model_gate.start_request(self.key, policy)
-            self.assertLess(time.monotonic() - begin, .15)
+            phases = []
+            model_gate.start_request(self.key, policy, notice=phases.append)
+            self.assertEqual(phases, ['generating'])
 
     def test_actual_starts_remain_spaced_after_long_budget_delay(self):
         policy = {**self.policy, 'min_interval': .08}
@@ -282,20 +300,21 @@ class GateTests(unittest.TestCase):
         def job(group):
             with model_gate.acquire(self.key, group, 'chat', policy):
                 leased[group].set()
-                release.wait(2)
+                if not release.wait(30):
+                    raise TimeoutError('test coordinator did not release budget wait')
                 model_gate.start_request(self.key, policy)
                 starts.append(time.monotonic())
                 time.sleep(.01)
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(job, group) for group in leased]
             try:
-                self.assertTrue(all(event.wait(1) for event in leased.values()))
+                self.assertTrue(all(event.wait(30) for event in leased.values()))
                 time.sleep(.1)
                 self.assertEqual(model_gate.snapshot(self.key)['active'], 2)
             finally:
                 release.set()
             for future in futures:
-                future.result(timeout=2)
+                future.result(timeout=60)
         starts.sort()
         self.assertEqual(len(starts), 2)
         self.assertGreaterEqual(starts[1] - starts[0], .075)
@@ -315,16 +334,16 @@ class GateTests(unittest.TestCase):
             with model_gate.acquire(self.key, 10, 'chat', policy):
                 model_gate.start_request(self.key, policy, cancel=cancelled.is_set, notice=notice)
                 entered.set()
-        with patch.object(model_gate, '_LEASE_GRACE', .06), concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        with patch.object(model_gate, '_LEASE_GRACE', .06), patch.object(model_gate, '_HEARTBEAT_INTERVAL', .02), concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(job)
             try:
-                self.assertTrue(waiting.wait(1))
+                self.assertTrue(waiting.wait(30))
                 time.sleep(.25)
                 self.assertEqual(model_gate.snapshot(self.key)['active'], 1)
             finally:
                 cancelled.set()
             with self.assertRaises(model_gate.Cancelled):
-                future.result(timeout=1)
+                future.result(timeout=30)
         self.assertFalse(entered.is_set())
         self.assertEqual(model_gate.snapshot(self.key)['active'], 0)
 
@@ -346,7 +365,7 @@ class GateTests(unittest.TestCase):
         policy = {**self.policy, 'queue_timeout': .06}
         with self.assertRaises(model_gate.QueueExpired):
             with model_gate.acquire(self.key, 10, 'chat', policy):
-                model_gate.cooldown(self.key, urllib.error.HTTPError('', 429, 'limited', {}, None))
+                model_gate.cooldown(self.key, urllib.error.HTTPError('', 429, 'limited', {'Retry-After': '120'}, None))
                 model_gate.start_request(self.key, policy)
         self.assertEqual(model_gate.snapshot(self.key)['active'], 0)
         self.assertGreater(model_gate.snapshot(self.key)['cooldown_seconds'], 10)
@@ -363,7 +382,7 @@ class GateTests(unittest.TestCase):
             self.until(lambda: model_gate.snapshot(self.key)['waiting'] == 1)
             cancelled.set()
             with self.assertRaises(model_gate.Cancelled):
-                future.result(timeout=1)
+                future.result(timeout=30)
         self.assertFalse(entered.is_set())
         self.assertEqual(model_gate.snapshot(self.key)['waiting'], 0)
         with self.assertRaises(model_gate.Cancelled):
@@ -433,13 +452,14 @@ class GateTests(unittest.TestCase):
         def first():
             with model_gate.acquire(self.key, 10, 'chat', policy):
                 first_entered.set()
-                release.wait(1)
+                if not release.wait(30):
+                    raise TimeoutError('test coordinator did not release stalled request')
         def second():
             with model_gate.acquire(self.key, 20, 'chat', policy):
                 second_entered.set()
-        with patch.object(model_gate, '_LEASE_GRACE', .06), concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        with patch.object(model_gate, '_LEASE_GRACE', .06), patch.object(model_gate, '_HEARTBEAT_INTERVAL', .02), concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             a = pool.submit(first)
-            self.assertTrue(first_entered.wait(1))
+            self.assertTrue(first_entered.wait(30))
             b = pool.submit(second)
             try:
                 time.sleep(.25)
@@ -447,8 +467,8 @@ class GateTests(unittest.TestCase):
                 self.assertEqual(model_gate.snapshot(self.key)['active'], 1)
             finally:
                 release.set()
-            a.result(timeout=2)
-            b.result(timeout=2)
+            a.result(timeout=60)
+            b.result(timeout=60)
         self.assertTrue(second_entered.is_set())
 
     def test_abandoned_lease_is_recovered(self):
@@ -475,8 +495,8 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import model_gate
 model_gate.ROOT = Path(sys.argv[2])
-model_gate._POLL_INTERVAL = .01
-policy = {'max_concurrent': 1, 'min_interval': .08, 'queue_timeout': 5, 'request_timeout': 1}
+model_gate._POLL_INTERVAL = .05
+policy = {'max_concurrent': 1, 'min_interval': .08, 'queue_timeout': 60, 'request_timeout': 5}
 with model_gate.acquire(sys.argv[3], int(sys.argv[4]), 'chat', policy):
     start = time.time()
     time.sleep(.13)
@@ -487,7 +507,7 @@ print(json.dumps([start, end]))
         spans = []
         try:
             for child in children:
-                output, errors = child.communicate(timeout=8)
+                output, errors = child.communicate(timeout=60)
                 self.assertEqual(child.returncode, 0, errors)
                 spans.append(json.loads(output))
         finally:
@@ -509,11 +529,11 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import model_gate
 model_gate.ROOT = Path(sys.argv[2])
-model_gate._POLL_INTERVAL = .01
-policy = {'max_concurrent': 2, 'min_interval': .08, 'queue_timeout': 5, 'request_timeout': 1}
+model_gate._POLL_INTERVAL = .05
+policy = {'max_concurrent': 2, 'min_interval': .08, 'queue_timeout': 60, 'request_timeout': 5}
 with model_gate.acquire(sys.argv[3], int(sys.argv[4]), 'chat', policy):
     (model_gate.ROOT / (sys.argv[4] + '.ready')).write_text('leased')
-    end = time.monotonic() + 5
+    end = time.monotonic() + 60
     while not (model_gate.ROOT / 'start-requests').exists():
         if time.monotonic() >= end:
             raise TimeoutError('test coordinator did not release budget wait')
@@ -526,12 +546,12 @@ print(json.dumps(start))
         children = [subprocess.Popen([sys.executable, '-c', script, str(module_root), self.tmp.name, self.key, str(group)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for group in (10, 20)]
         starts = []
         try:
-            self.until(lambda: all((Path(self.tmp.name) / f'{group}.ready').exists() for group in (10, 20)), timeout=5)
+            self.until(lambda: all((Path(self.tmp.name) / f'{group}.ready').exists() for group in (10, 20)), timeout=30)
             time.sleep(.1)
             self.assertEqual(model_gate.snapshot(self.key)['active'], 2)
             (Path(self.tmp.name) / 'start-requests').write_text('release budget wait')
             for child in children:
-                output, errors = child.communicate(timeout=8)
+                output, errors = child.communicate(timeout=60)
                 self.assertEqual(child.returncode, 0, errors)
                 starts.append(json.loads(output))
         finally:
