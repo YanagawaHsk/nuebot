@@ -7,7 +7,7 @@ on:
       tag:
         description: 'Version tag matching version.json, e.g. v1.1.1'
         required: true
-        default: v1.1.1
+        default: v1.2.0
 permissions:
   contents: write
 concurrency:
@@ -23,6 +23,8 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref_name }}
           persist-credentials: false
+      - name: Test account permissions
+        run: python -m unittest discover -s tests -v
       - name: Build only allowlisted files
         run: python tools/build_release.py
       - name: Publish release and update manifest

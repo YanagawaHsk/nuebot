@@ -28,3 +28,10 @@ STOP
 dist/
 plugin-assets/*
 !plugin-assets/import-manifest.json
+
+# Local panel identities and access history
+panel-accounts.json
+panel-accounts.tmp
+admin-setup-code.txt
+access-audit.jsonl
+access-audit.tmp

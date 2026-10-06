@@ -13,9 +13,11 @@ import shared_budget
 import plugin_manager
 import memory_learning
 import update_checker
+import panel_auth
 from local_identity import BOT_ID,OWNER_ID,DEFAULT_GROUP,onebot_path
 PLUGIN_ENGINE=plugin_features.Engine()
 ROOT=Path(__file__).resolve().parent
+ACCESS=panel_auth.Store(ROOT)
 PORT=5100
 ORIGIN=f'http://127.0.0.1:{PORT}'
 TOKEN=secrets.token_urlsafe(32)
@@ -150,13 +152,27 @@ class Handler(BaseHTTPRequestHandler):
         allowed={row['group_id'] for row in current['groups']}|{int(g) for g in current['plugin_groups']}|{int(g) for g in current.get('learning_groups',{})}|{current['connection']['group_id']}
         if gid not in allowed:raise ValueError('请先配置这个群')
         return gid
-    def reply(self,value,status=200,content_type='application/json; charset=utf-8'):
+    def reply(self,value,status=200,content_type='application/json; charset=utf-8',cookie=None):
         data=json.dumps(value,ensure_ascii=False).encode('utf-8') if isinstance(value,(dict,list)) else value.encode('utf-8')
-        self.send_response(status);self.send_header('Content-Type',content_type);self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('X-Frame-Options','DENY');self.end_headers();self.wfile.write(data)
+        if self.command=='POST' and getattr(self,'audit_action',False) and status<400:
+            ACCESS.audit(self.session['username'],urlsplit(self.path).path,getattr(self,'audit_target',''))
+        self.send_response(status)
+        if cookie:self.send_header('Set-Cookie',cookie)
+        self.send_header('Content-Type',content_type);self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('X-Frame-Options','DENY');self.end_headers();self.wfile.write(data)
     def do_GET(self):
         if not self.valid_host():return self.reply({'error':'仅允许本机访问'},403)
-        if self.path=='/':return self.reply((ROOT/'panel.html').read_text(encoding='utf-8').replace('__CSRF__',TOKEN).replace('__VERSION__',update_checker.current()['version']).replace('__BOT_ID__',str(BOT_ID)).replace('__OWNER_ID__',str(OWNER_ID)).replace('__DEFAULT_GROUP__',str(DEFAULT_GROUP)),content_type='text/html; charset=utf-8')
-        if self.headers.get('X-Panel-Token')!=TOKEN:return self.reply({'error':'请刷新管理页面'},403)
+        self.session=ACCESS.session(self.headers.get('Cookie'))
+        if self.path=='/':
+            template='panel.html' if self.session and self.session['role']=='admin' else 'custodian.html' if self.session else 'login.html'
+            token=self.session['csrf'] if self.session else TOKEN
+            page=(ROOT/template).read_text(encoding='utf-8').replace('__CSRF__',token).replace('__VERSION__',update_checker.current()['version']).replace('__SETUP__','false' if ACCESS.initialized() else 'true')
+            return self.reply(page.replace('__BOT_ID__',str(BOT_ID)).replace('__OWNER_ID__',str(OWNER_ID)).replace('__DEFAULT_GROUP__',str(DEFAULT_GROUP)),content_type='text/html; charset=utf-8')
+        if not self.session:return self.reply({'error':'请先登录'},401)
+        if self.headers.get('X-Panel-Token')!=self.session['csrf']:return self.reply({'error':'请刷新管理页面'},403)
+        if not panel_auth.allowed(self.session['role'],'GET',urlsplit(self.path).path):return self.reply({'error':'托管人员没有此权限'},403)
+        if self.path=='/api/auth/session':return self.reply({k:self.session[k] for k in ('username','role','expires')})
+        if self.path=='/api/auth/users':return self.reply({'users':ACCESS.users()})
+        if self.path=='/api/auth/audit':return self.reply({'entries':ACCESS.audit_entries()})
         if self.path=='/api/settings':return self.reply(settings.load())
         if self.path=='/api/updates':return self.reply(update_checker.state())
         if urlsplit(self.path).path=='/api/memory':
@@ -166,7 +182,12 @@ class Handler(BaseHTTPRequestHandler):
                 rows=memory_learning.Store(gid).entries()
                 return self.reply({'entries':rows[offset:offset+50],'total':len(rows),'offset':offset})
             except (ValueError,OSError):return self.reply({'error':'无法读取该群学习记录，请检查群号'},400)
-        if self.path=='/api/status':return self.reply(snapshot())
+        if self.path=='/api/status':
+            status=snapshot()
+            if self.session['role']=='custodian':
+                keys=('state','fresh','pid','stop_requested','sent_last_hour','model_calls_last_hour','pending_messages')
+                status={**{k:status.get(k) for k in keys},'groups':[{k:row.get(k) for k in ('group','state','fresh')} for row in status.get('groups',[])]}
+            return self.reply(status)
         if self.path=='/api/plugins':
             PLUGIN_ENGINE.refresh_assets()
             return self.reply({'catalog':plugin_features.panel_catalog(),'directories':plugin_features.read('import-manifest.json')['directories'],'counts':{'foods':len(PLUGIN_ENGINE.foods),'music':len(PLUGIN_ENGINE.music),'spells':len(PLUGIN_ENGINE.spells),'fortunes':len(list((plugin_features.ASSETS/'FortuneDraw/fortunes').glob('*.jpg'))),'tarot':len(PLUGIN_ENGINE.tarot['cards'])}})
@@ -181,11 +202,31 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:return self.reply({'error':str(exc)},400)
         return self.reply({'error':'未找到'},404)
     def do_POST(self):
-        if not self.valid_host() or self.headers.get('Origin')!=ORIGIN or self.headers.get('X-Panel-Token')!=TOKEN:return self.reply({'error':'请在本机管理页面操作'},403)
+        if not self.valid_host() or self.headers.get('Origin')!=ORIGIN:return self.reply({'error':'请通过管理页面操作'},403)
+        self.session=ACCESS.session(self.headers.get('Cookie'));self.audit_action=False
+        public=self.path in ('/api/auth/setup','/api/auth/login')
+        if not public and not self.session:return self.reply({'error':'请先登录'},401)
+        expected=TOKEN if public else self.session['csrf']
+        if self.headers.get('X-Panel-Token')!=expected:return self.reply({'error':'请刷新管理页面'},403)
+        if not public and not panel_auth.allowed(self.session['role'],'POST',urlsplit(self.path).path):
+            ACCESS.audit(self.session['username'],'permission_denied',urlsplit(self.path).path,False)
+            return self.reply({'error':'托管人员没有此权限'},403)
+        self.audit_action=not public and not self.path.startswith('/api/auth/')
         try:
             size=int(self.headers.get('Content-Length','0'))
             if not 0<size<=150000:raise ValueError('内容过大')
             body=json.loads(self.rfile.read(size))
+            if not isinstance(body,dict):raise ValueError('请求格式不正确')
+            if public:
+                key=ACCESS.setup(body.get('code'),body.get('username'),body.get('password')) if self.path=='/api/auth/setup' else ACCESS.login(body.get('username'),body.get('password'))
+                return self.reply({'ok':True},cookie=panel_auth.session_cookie(key))
+            if self.path=='/api/auth/logout':
+                ACCESS.logout(self.session);return self.reply({'ok':True},cookie=panel_auth.expired_cookie())
+            if self.path=='/api/auth/password':
+                ACCESS.change_password(self.session['username'],body.get('old_password'),body.get('password'))
+                return self.reply({'ok':True},cookie=panel_auth.expired_cookie())
+            if self.path=='/api/auth/users':
+                ACCESS.manage(self.session['username'],body);return self.reply({'users':ACCESS.users()})
             if self.path=='/api/updates':
                 if body.get('action')=='save':update_checker.save(body.get('config'))
                 elif body.get('action')=='check':return self.reply(update_checker.check())
@@ -217,13 +258,20 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/test-model':return self.reply(test_model(body))
             if self.path=='/api/control':
                 action=body.get('action')
-                if action not in ('start','stop'):raise ValueError('未知操作')
+                if action not in ('start','stop','restart'):raise ValueError('未知操作')
+                if RESTART['pending']:raise ValueError('正在重启，请稍后再操作')
+                self.audit_target=action
+                if action=='restart':
+                    if active():control('stop')
+                    RESTART['pending']=True;threading.Thread(target=restart_when_stopped,daemon=True).start()
+                    return self.reply({'ok':True,'message':'已安排重启，请等待状态刷新'})
                 return self.reply({'ok':True,'message':control(action)})
             if self.path=='/api/preview':
                 current=settings.validate(body['settings'])
                 response=settings.match_keyword(current['keywords'],body.get('user_id',''),str(body.get('text',''))[:600],bool(body.get('mentioned')))
                 return self.reply({'response':response,'note':'仅本地试匹配，不发QQ消息、不调用模型'})
             return self.reply({'error':'未找到'},404)
+        except panel_auth.AccessError as exc:return self.reply({'error':str(exc)},exc.status)
         except (ValueError,KeyError,TypeError) as exc:return self.reply({'error':str(exc)},400)
         except Exception:return self.reply({'error':'操作失败，请检查本地运行状态'},500)
 
