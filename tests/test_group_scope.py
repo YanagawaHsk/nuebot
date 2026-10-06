@@ -1,5 +1,6 @@
 import concurrent.futures,importlib.util,json,tempfile,time,unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SOURCE=Path(__file__).resolve().parents[1]
 
@@ -38,6 +39,19 @@ class GroupBudgetTests(unittest.TestCase):
         self.assertFalse(self.b.send(2,lambda:False,10001,5))
         self.assertEqual(self.b.count('message'),1)
         self.assertEqual(self.b.count('message',10001),0)
+    def test_windows_reader_conflict_retries_without_sending_twice(self):
+        original=Path.replace;attempts=[];sent=[]
+        def temporarily_busy(path,target):
+            attempts.append(1)
+            if len(attempts)<3:raise PermissionError('busy reader')
+            return original(path,target)
+        with patch.object(Path,'replace',temporarily_busy),patch.object(self.b.time,'sleep'):
+            self.assertTrue(self.b.send(5,lambda:sent.append(1) or True,10001))
+        self.assertEqual(len(attempts),3);self.assertEqual(len(sent),1)
+        self.assertEqual(self.b.count('message',10001),1)
+    def test_persistent_budget_write_failure_is_reported(self):
+        with patch.object(Path,'replace',side_effect=PermissionError('busy reader')),patch.object(self.b.time,'sleep'):
+            with self.assertRaises(PermissionError):self.b.claim_model(5,10001)
     def test_quiet_timer_is_local_to_group(self):
         c=module('chat_control');c.PATH=Path(self.temp.name)/'chat-control.json'
         c.set_quiet(30,10001)

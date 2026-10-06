@@ -49,6 +49,7 @@ if '--group' in sys.argv:
     ROOT=BASE/'group-workers'/str(GROUP);ROOT.mkdir(parents=True,exist_ok=True)
     HALT=BASE/'STOP'
 lock = threading.Lock()
+status_lock = threading.Lock()
 context = collections.deque(maxlen=CONTEXT_MESSAGES)
 pending = collections.deque(maxlen=100)
 moderation_pending = collections.deque(maxlen=100)
@@ -82,7 +83,15 @@ def record(event, **fields):
 
 def status(state, **fields):
     value={'state':state,'pid':os.getpid(),'group':GROUP,'bot':BOT,'model':MODEL['model'],'context_messages':CONTEXT_MESSAGES,'output_tokens':OUTPUT_TOKENS,'max_messages_hour':MAX_MESSAGES_HOUR,'max_model_calls_hour':MAX_MODEL_CALLS_HOUR,'reply_cooldown_seconds':REPLY_COOLDOWN_SECONDS,'settings_revision':str(SETTINGS_STAMP),'skynet_enabled':moderator.policy['enabled'],'bot_role':bot_role,'time':time.strftime('%Y-%m-%d %H:%M:%S'),'chat_enabled':SETTINGS['runtime'].get('chat_enabled',True),'mention_only':SETTINGS['runtime'].get('mention_only',False),'cooldown_remaining':max(0,int(last_send+REPLY_COOLDOWN_SECONDS-time.time())),'pending_messages':len(pending),'security_counts':security_counts.snapshot(),**chat_control.state(GROUP),**fields}
-    tmp=ROOT/'status.tmp';tmp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');tmp.replace(ROOT/'status.json')
+    # A dashboard read must never stop the chat worker on Windows.
+    with status_lock:
+        try:
+            tmp=ROOT/'status.tmp';tmp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8')
+            shared_budget.replace_with_retry(tmp,ROOT/'status.json')
+            return True
+        except OSError:
+            return False
+
 
 
 def reload_settings(force=False):

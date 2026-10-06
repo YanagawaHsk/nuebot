@@ -8,6 +8,15 @@ LOCK=threading.RLock()
 PATH=BASE/'shared-budget.json'
 KEYS=('message','model','sticker','topic')
 
+def replace_with_retry(source,target):
+    # Windows readers may briefly hold a handle without FILE_SHARE_DELETE.
+    for attempt in range(21):
+        try:source.replace(target);return
+        except PermissionError:
+            if attempt==20:raise
+            time.sleep(.05)
+
+
 def trim(bucket):
     now=time.time()
     return {key:[t for t in bucket.get(key,[]) if isinstance(t,(int,float)) and t>now-86400] for key in KEYS}
@@ -40,7 +49,7 @@ def transaction():
                 except FileNotFoundError:raw={}
                 data={**trim(raw),'groups':{gid:trim(v) for gid,v in raw.get('groups',{}).items()}}
                 yield data
-                tmp=PATH.with_suffix('.tmp');tmp.write_text(json.dumps(data),encoding='utf-8');tmp.replace(PATH)
+                tmp=PATH.with_suffix('.tmp');tmp.write_text(json.dumps(data),encoding='utf-8');replace_with_retry(tmp,PATH)
             finally:handle.seek(0);msvcrt.locking(handle.fileno(),msvcrt.LK_UNLCK,1)
 
 def bucket(data,group):
