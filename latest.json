@@ -1,7 +1,7 @@
 {
   "app_id": "nuebot",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "release_notes": "公开程序发布；账号配置保留本机。详情见 CHANGELOG.md。",
-  "download_url": "https://github.com/YanagawaHsk/nuebot/releases/download/v1.1.2/nuebot-1.1.2-windows.zip",
-  "sha256": "0f9bb58e35b50963b8ea42e3ec679fc56de79fa574918ea9318f0ac7398c48da"
+  "download_url": "https://github.com/YanagawaHsk/nuebot/releases/download/v1.2.0/nuebot-1.2.0-windows.zip",
+  "sha256": "8a19ce3bbc22296aa003e54b023cb0e63c27c8a28f83a6797f218ed679550492"
 }
