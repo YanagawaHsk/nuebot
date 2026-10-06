@@ -28,6 +28,37 @@ def validate_connection(value):
 def defaults():
     return {'security':dict(ai_guard.DEFAULT),'version':1,'plugins':plugin_features.validate({}),'relationships':copy.deepcopy(DEFAULT_RELATIONSHIPS),'connection':connection_defaults(),'persona':(ROOT/'persona.txt').read_text(encoding='utf-8'),'runtime':copy.deepcopy(DEFAULT_RUNTIME),'moderation':json.loads((ROOT/'moderation.json').read_text(encoding='utf-8')),'keywords':[]}
 
+def validate_runtime(value):
+    if not isinstance(value,dict):raise ValueError('群聊天设置格式不正确')
+    runtime={**DEFAULT_RUNTIME,**value}
+    for key,(low,high) in RANGES.items():
+        v=runtime.get(key)
+        if type(v) not in (int,float) or not low<=v<=high or (key!='mention_probability' and type(v) is not int):raise ValueError(f'{key} 超出可设置范围')
+    if runtime['delay_max']<runtime['delay_min']:raise ValueError('最长等待不能小于最短等待')
+    for key in ('topic_enabled','stickers_enabled','challenge_filter','catchphrase_filter','chat_enabled','mention_only'):
+        if type(runtime.get(key)) is not bool:raise ValueError('开关设置不正确')
+    return {k:runtime[k] for k in DEFAULT_RUNTIME}
+
+def runtime_for(value,group):
+    return copy.deepcopy(value.get('runtime_groups',{}).get(str(group),value['runtime']))
+
+def validate_runtime_groups(rows,runtime,gids):
+    if not isinstance(rows,dict) or len(rows)>50:raise ValueError('最多保存50个群的聊天设置')
+    clean={}
+    for gid,profile in rows.items():
+        if not str(gid).isdigit() or not 10000<=int(gid)<=999999999999:raise ValueError('聊天设置群号不正确')
+        clean[str(int(gid))]=validate_runtime(profile)
+    for gid in gids:clean.setdefault(str(gid),copy.deepcopy(runtime))
+    if len(clean)>50:raise ValueError('最多保存50个群的聊天设置')
+    return clean
+
+def validate_account_limits(value,runtime):
+    if value is None:value={'enabled':True,'messages_hour':runtime['messages_hour'],'model_calls_hour':runtime['model_calls_hour']}
+    if not isinstance(value,dict) or type(value.get('enabled')) is not bool:raise ValueError('总额度保护开关不正确')
+    for key,maximum in (('messages_hour',2400),('model_calls_hour',7200)):
+        if type(value.get(key)) is not int or not 1<=value[key]<=maximum:raise ValueError('所有群总额度超出范围')
+    return {k:value[k] for k in ('enabled','messages_hour','model_calls_hour')}
+
 def validate(value):
     if not isinstance(value,dict):raise ValueError('配置格式不正确')
     connection=validate_connection(value.get('connection') or connection_defaults())
@@ -35,13 +66,7 @@ def validate(value):
     persona=value.get('persona')
     if not isinstance(persona,str) or not 1<=len(persona)<=30000:raise ValueError('人设需要1–30000个字符')
     if 'sk-' in persona:raise ValueError('请勿把API密钥写入人设')
-    runtime={**DEFAULT_RUNTIME,**value.get('runtime',{})}
-    for key,(low,high) in RANGES.items():
-        v=runtime.get(key)
-        if type(v) not in (int,float) or not low<=v<=high or (key!='mention_probability' and type(v) is not int):raise ValueError(f'{key} 超出可设置范围')
-    if runtime['delay_max']<runtime['delay_min']:raise ValueError('最长等待不能小于最短等待')
-    for key in ('topic_enabled','stickers_enabled','challenge_filter','catchphrase_filter','chat_enabled','mention_only'):
-        if type(runtime.get(key)) is not bool:raise ValueError('开关设置不正确')
+    runtime=validate_runtime(value.get('runtime',{}))
     policy=value.get('moderation',{})
     for key in ('enabled','warnings_enabled','punishments_enabled'):
         if type(policy.get(key)) is not bool:raise ValueError('天网开关设置不正确')
@@ -65,7 +90,8 @@ def validate(value):
     subscriptions=validate_subscriptions(value.get('groups'),connection['group_id'])
     groups=validate_plugin_groups(value.get('plugin_groups'),value.get('plugins',{}),connection['group_id'])
     learning=memory_learning.validate_groups(value.get('learning_groups',{}))
-    return {'security':ai_guard.validate(value.get('security',{})),'version':1,'learning_groups':learning,'groups':subscriptions,'plugin_groups':groups,'plugins':groups.get(str(connection['group_id']),plugin_features.validate({})),'relationships':relationships,'connection':connection,'persona':persona,'runtime':{k:runtime[k] for k in DEFAULT_RUNTIME},'moderation':fixed,'keywords':clean}
+    runtime_groups=validate_runtime_groups(value.get('runtime_groups',{}),runtime,{row['group_id'] for row in subscriptions}|set(groups)|set(learning)|{connection['group_id']})
+    return {'runtime_groups':runtime_groups,'account_limits':validate_account_limits(value.get('account_limits'),runtime),'security':ai_guard.validate(value.get('security',{})),'version':2,'learning_groups':learning,'groups':subscriptions,'plugin_groups':groups,'plugins':groups.get(str(connection['group_id']),plugin_features.validate({})),'relationships':relationships,'connection':connection,'persona':persona,'runtime':{k:runtime[k] for k in DEFAULT_RUNTIME},'moderation':fixed,'keywords':clean}
 
 def validate_subscriptions(rows,primary):
     if rows is None:rows=[{'group_id':primary,'enabled':True}]
@@ -110,7 +136,7 @@ def relationship_for(rows,user_id):
     return next(({k:v for k,v in row.items() if k not in ('user_id','enabled')} for row in rows if row['enabled'] and str(user_id)==row['user_id']),None)
 
 def load():
-    return validate(json.loads(PATH.read_text(encoding='utf-8'))) if PATH.exists() else defaults()
+    return validate(json.loads(PATH.read_text(encoding='utf-8'))) if PATH.exists() else validate(defaults())
 
 def save(value):
     value=validate(value)

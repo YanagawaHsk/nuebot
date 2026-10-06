@@ -124,7 +124,28 @@ with patch.object(memory_learning.Store,'entries',return_value=[{'active':True,'
 # Multiple subscriptions produce distinct workers without opening QQ connections.
 import panel_settings,group_workers,runpy
 cfg=panel_settings.validate(bot.SETTINGS);cfg['groups']=[{'group_id':100000003,'enabled':True},{'group_id':100000005,'enabled':True}]
-panel_settings.save(cfg)
+# Migration snapshots old rhythm into independent group profiles and preserves the account cap.
+cfg=panel_settings.validate(cfg)
+assert cfg['runtime_groups']['100000003']==cfg['runtime']
+assert cfg['account_limits']['messages_hour']==cfg['runtime']['messages_hour']
+cfg['runtime_groups']['100000005'].update(context_messages=3,output_tokens=64,cooldown_seconds=600,messages_hour=2)
+cfg['learning_groups']={'100000003':{**memory_learning.DEFAULT,'enabled':True},'100000005':{**memory_learning.DEFAULT,'enabled':False}}
+cfg=panel_settings.save(cfg)
+assert cfg['runtime_groups']['100000003']['context_messages']!=3
+assert panel_settings.runtime_for(cfg,100000005)['context_messages']==3
+saved=panel_settings.load();assert saved==cfg
+bad=json.loads(json.dumps(cfg));bad['runtime_groups']['100000005']['context_messages']=41
+try:panel_settings.validate(bad);raise AssertionError('invalid per-group context accepted')
+except ValueError:pass
+original_group=bot.GROUP
+bot.GROUP=100000005;bot.reload_settings(force=True)
+assert bot.CONTEXT_MESSAGES==3 and bot.OUTPUT_TOKENS==64 and bot.REPLY_COOLDOWN_SECONDS==600 and bot.MAX_MESSAGES_HOUR==2
+bot.context.clear();bot.pending.clear();bot.receive(event('hello from another group',mid=99))
+assert not bot.context and not bot.pending
+assert not memory_learning.config(bot.SETTINGS,bot.GROUP)['enabled']
+bot.GROUP=original_group;bot.reload_settings(force=True)
+assert bot.CONTEXT_MESSAGES==cfg['runtime']['context_messages']
+assert memory_learning.config(bot.SETTINGS,bot.GROUP)['enabled']
 assert group_workers.directory(100000003)!=group_workers.directory(100000005)
 with patch.object(sys,'argv',['control.py','start']),patch('subprocess.Popen') as popen:
     runpy.run_path(str(bot.BASE/'control.py'))

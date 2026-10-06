@@ -110,17 +110,26 @@ def snapshot():
     running=[row for row in workers if row.get('fresh')]
     if running:
         current=settings.load();preferred=next((row for row in running if row['group']==current['connection']['group_id']),running[0]);status.update(preferred)
-        status['sent_last_hour']=shared_budget.count('message');status['model_calls_last_hour']=shared_budget.count('model')
+        status['sent_last_hour']=shared_budget.count('message',preferred['group']);status['model_calls_last_hour']=shared_budget.count('model',preferred['group'])
     status['stop_requested']=(ROOT/'STOP').exists()
     status['connection_restart']=dict(RESTART)
-    status.update(chat_control.state())
+    current=settings.load()
+    status['account_usage']={'messages':shared_budget.count('message'),'models':shared_budget.count('model')}
+    status['account_limits']=current['account_limits']
+    existing={r['group']:r for r in status['groups']}
+    gids={r['group_id'] for r in current['groups']}|{int(g) for g in current['runtime_groups']}
+    for gid in gids:
+        row=existing.get(gid,{'group':gid,'fresh':False,'state':'stopped'});row.update(chat_control.state(gid))
+        row['sent_last_hour']=shared_budget.count('message',gid);row['model_calls_last_hour']=shared_budget.count('model',gid)
+        if gid not in existing:status['groups'].append(row)
+    status.update(chat_control.state(status.get('group',current['connection']['group_id'])))
     try:status['fresh']=bool(running) or (group_workers.locked(ROOT/'runner.lock') and time.time()-path.stat().st_mtime<90)
     except FileNotFoundError:status['fresh']=False
     return status
 
-def recent_events():
+def recent_events(group=None):
     labels={'plugin_sent':'插件回复已发送','plugin_error':'插件请求失败','settings_applied':'设置已应用','security_input_blocked':'已隔离越权聊天指令','security_output_blocked':'已拦截可疑模型输出','security_learning_blocked':'已拦截可疑学习结果','security_learning_filtered':'已过滤学习中的越权条目','settings_error':'设置读取失败','websocket_connected':'QQ消息连接成功','websocket_error':'QQ消息连接中断，等待重连','runner_started':'机器人已启动','runner_stopped':'机器人已停止','message_sent':'消息已发送','model_error':'模型请求失败','fatal':'运行出现错误','send_unknown':'发送结果待核实，已停止','moderation_warning':'天网已提醒','moderation_mute':'天网已执行个人禁言','moderation_error':'天网检测失败','moderation_missing_permission':'天网缺少管理员权限','moderation_unknown':'管理结果待核实，已停止','stale_reply_discarded':'已丢弃过时回复','owner_stop':'创造者请求停止','chat_paused':'创造者开启安静模式','chat_resumed':'创造者恢复接话'}
-    path=ROOT/'events.log'
+    path=(group_workers.directory(group) if group else ROOT)/'events.log'
     if not path.exists():return {'events':[]}
     # Read only a bounded tail, and expose event labels rather than raw fields or chats.
     with path.open('rb') as handle:
@@ -131,18 +140,19 @@ def recent_events():
         if parts and parts[0] in labels:rows.append({'time':line[:19],'message':labels[parts[0]]})
     return {'events':list(reversed(rows[-40:]))}
 
-def diagnostics():
-    current=settings.load();checks=[]
+def diagnostics(group=None):
+    current=settings.load();group=group or current['connection']['group_id'];checks=[]
     try:
         login=onebot('get_login_info',{})
         correct=login.get('user_id')==BOT_ID
         checks.append({'name':'QQ账号连接','ok':correct,'message':'机器人账号已连接' if correct else '登录账号不匹配'})
         if correct:
-            info=onebot('get_group_info',{'group_id':current['connection']['group_id']})
-            checks.append({'name':'目标群','ok':info.get('group_id')==current['connection']['group_id'],'message':'目标群已接入'})
+            info=onebot('get_group_info',{'group_id':group})
+            checks.append({'name':'目标群','ok':info.get('group_id')==group,'message':'目标群已接入'})
     except ValueError as exc:checks.append({'name':'QQ连接','ok':False,'message':str(exc)})
     checks.append({'name':'模型配置','ok':bool(json.loads((ROOT/'model.json').read_text(encoding='utf-8')).get('api_key')),'message':'已保存API地址、模型名称及密钥；实际连通性请点模型连接测试'})
-    checks.append({'name':'机器人后台','ok':active(),'message':'后台进程运行中' if active() else '后台进程未启动'})
+    group_active=group_workers.locked(group_workers.directory(group)/'runner.lock')
+    checks.append({'name':'本群后台','ok':group_active,'message':'本群进程运行中' if group_active else '本群进程未启动'})
     return {'checks':checks}
 
 class Handler(BaseHTTPRequestHandler):
@@ -193,8 +203,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/plugins':
             PLUGIN_ENGINE.refresh_assets()
             return self.reply({'catalog':plugin_features.panel_catalog(),'directories':plugin_features.read('import-manifest.json')['directories'],'counts':{'foods':len(PLUGIN_ENGINE.foods),'music':len(PLUGIN_ENGINE.music),'spells':len(PLUGIN_ENGINE.spells),'fortunes':len(list((plugin_features.ASSETS/'FortuneDraw/fortunes').glob('*.jpg'))),'tarot':len(PLUGIN_ENGINE.tarot['cards'])}})
-        if self.path=='/api/events':return self.reply(recent_events())
-        if self.path=='/api/diagnostics':return self.reply(diagnostics())
+        if urlsplit(self.path).path in ('/api/events','/api/diagnostics'):
+            try:
+                query=parse_qs(urlsplit(self.path).query);gid=self.learning_group(query.get('group_id',[settings.load()['connection']['group_id']])[0])
+                return self.reply(recent_events(gid) if urlsplit(self.path).path=='/api/events' else diagnostics(gid))
+            except (ValueError,TypeError):return self.reply({'error':'请先保存这个群的配置'},400)
         if self.path=='/api/connection':return self.reply({'has_key':bool(json.loads((ROOT/'model.json').read_text(encoding='utf-8')).get('api_key')),'bot_id':BOT_ID,'revision':str(settings.PATH.stat().st_mtime_ns) if settings.PATH.exists() else '0'})
         if self.path=='/api/groups':
             try:
@@ -261,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
                 command=PLUGIN_ENGINE.detect(text,{'group_id':int(body.get('group_id',current['connection']['group_id'])),'user_id':uid,'message':[]},current['plugin_groups'].get(str(body.get('group_id',current['connection']['group_id'])),plugin_features.validate({})))
                 result=PLUGIN_ENGINE.execute(command,current['plugin_groups'].get(str(body.get('group_id',current['connection']['group_id'])),plugin_features.validate({})),preview=True) if command else None
                 return self.reply({'matched':command['id'] if command else None,'text':result['text'] if result else '没有命中已启用功能','has_image':bool(result and result.get('image')),'note':'仅本机试用，不发QQ消息、不请求外部接口、不计入额度'})
-            if self.path=='/api/quiet':return self.reply(chat_control.set_quiet(body.get('minutes')))
+            if self.path=='/api/quiet':return self.reply(chat_control.set_quiet(body.get('minutes'),self.learning_group(body.get('group_id',settings.load()['connection']['group_id']))))
             if self.path=='/api/test-model':return self.reply(test_model(body))
             if self.path=='/api/control':
                 action=body.get('action')
