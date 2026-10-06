@@ -1,0 +1,28 @@
+{
+  "enabled": false,
+  "warnings_enabled": false,
+  "punishments_enabled": false,
+  "group_id": 100000003,
+  "warning_window_seconds": 1800,
+  "warnings_before_mute": 2,
+  "individual_mute_seconds": 600,
+  "whole_group_mute_seconds": 300,
+  "whole_group_requires_owner_command": true,
+  "minimum_confidence": 0.9,
+  "allowed_categories": [
+    "targeted_abuse",
+    "threat",
+    "harassment",
+    "spam",
+    "explicit_sexual",
+    "extreme_gore"
+  ],
+  "ordinary_political_discussion_allowed": true,
+  "image_moderation_enabled": false,
+  "mode_name": "天网",
+  "non_explicit_adult_fictional_content_allowed": true,
+  "consensual_light_teasing_allowed": true,
+  "real_person_nonconsensual_sexualization_forbidden": true,
+  "protected_accounts": [],
+  "require_bot_admin_role_before_punishment": true
+}
