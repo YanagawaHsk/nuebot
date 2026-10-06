@@ -2,7 +2,7 @@
 import ast,hashlib,json,os,re,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-FILES=['conversation_flow.py','model_gate.py','delivery_queue.py','error_log.py','ai_guard.py','panel_auth.py','manage_access.py','login.html','custodian.html','bot.py','chat_control.py','control.py','group_workers.py','memory_learning.py','moderation.py','panel_settings.py','panel_server.py','plugin_features.py','plugin_manager.py','shared_budget.py','update_checker.py','open_panel.pyw','panel.html','local_identity.py','setup_local.py','start-panel.ps1','version.json','requirements.txt','model.example.json','account.example.json','moderation.example.json','persona.example.txt','plugin-assets/import-manifest.json','README.md','CHANGELOG.md']
+FILES=['conversation_flow.py','model_gate.py','delivery_queue.py','error_log.py','ai_guard.py','panel_auth.py','manage_access.py','login.html','custodian.html','bot.py','chat_control.py','control.py','group_workers.py','memory_learning.py','moderation.py','panel_settings.py','panel_server.py','snowluma_bridge.py','plugin_features.py','plugin_manager.py','shared_budget.py','update_checker.py','open_panel.pyw','panel.html','local_identity.py','setup_local.py','start-panel.ps1','Open-ControlCenter.cmd','version.json','requirements.txt','model.example.json','account.example.json','moderation.example.json','persona.example.txt','plugin-assets/import-manifest.json','README.md','CHANGELOG.md']
 def build(repository=None):
     version=json.loads((ROOT/'version.json').read_text(encoding='utf-8'))['version']
     if not re.fullmatch(r'\d+\.\d+\.\d+',version):raise ValueError('Invalid version')

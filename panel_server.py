@@ -17,11 +17,13 @@ import memory_learning
 import update_checker
 import panel_auth
 import ai_guard
+import snowluma_bridge
 from local_identity import BOT_ID,OWNER_ID,DEFAULT_GROUP,onebot_path
 PLUGIN_ENGINE=plugin_features.Engine()
 ROOT=Path(__file__).resolve().parent
 ACCESS=panel_auth.Store(ROOT)
 PORT=5100
+SNOW_PORT=snowluma_bridge.BRIDGE_PORT
 ORIGIN=f'http://127.0.0.1:{PORT}'
 TOKEN=secrets.token_urlsafe(32)
 SAVE_LOCK=threading.Lock()
@@ -32,10 +34,15 @@ opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
 
 def onebot(action,body):
     if action not in ('get_group_list','get_group_info','get_login_info','get_group_msg_history'):raise ValueError('只允许读取连接信息')
-    path=onebot_path()
-    config=json.loads(path.read_text(encoding='utf-8'))
-    endpoint=next(n for n in config['networks']['httpServers'] if n['host']=='127.0.0.1' and n['port']==3000)
-    req=urllib.request.Request('http://127.0.0.1:3000/'+action,data=json.dumps(body).encode('utf-8'),headers={'Authorization':'Bearer '+endpoint['accessToken'],'Content-Type':'application/json'})
+    try:
+        config=json.loads(onebot_path().read_text(encoding='utf-8'))
+        endpoint=next((n for n in config['networks']['httpServers'] if n['host']=='127.0.0.1' and n['port']==3000),None)
+        if endpoint is None:raise ValueError('missing endpoint')
+        credential=endpoint['accessToken']
+        if not isinstance(credential,str) or not credential:raise ValueError('missing credential')
+    except (OSError,ValueError,KeyError,TypeError,AttributeError):
+        raise ValueError('QQ接口配置未就绪，请在运行机器核对账号配置、OneBot文件路径和本机3000端口设置') from None
+    req=urllib.request.Request('http://127.0.0.1:3000/'+action,data=json.dumps(body).encode('utf-8'),headers={'Authorization':'Bearer '+credential,'Content-Type':'application/json'})
     try:
         with opener.open(req,timeout=8) as r:result=json.load(r)
     except Exception:raise ValueError('QQ连接未就绪，请先在SnowLuma登录并接入机器人账号') from None
@@ -152,7 +159,11 @@ def diagnostics(group=None):
             info=onebot('get_group_info',{'group_id':group})
             checks.append({'name':'目标群','ok':info.get('group_id')==group,'message':'目标群已接入'})
     except ValueError as exc:checks.append({'name':'QQ连接','ok':False,'message':str(exc)})
-    checks.append({'name':'模型配置','ok':bool(json.loads((ROOT/'model.json').read_text(encoding='utf-8')).get('api_key')),'message':'已保存API地址、模型名称及密钥；实际连通性请点模型连接测试'})
+    try:
+        model=json.loads((ROOT/'model.json').read_text(encoding='utf-8'))
+        configured=bool(model.get('api_key'))
+    except (OSError,ValueError,AttributeError):configured=False
+    checks.append({'name':'模型配置','ok':configured,'message':'已保存模型密钥；实际连通性请点模型连接测试' if configured else '模型密钥尚未配置，请在连接设置填写'})
     group_active=group_workers.locked(group_workers.directory(group)/'runner.lock')
     checks.append({'name':'本群后台','ok':group_active,'message':'本群进程运行中' if group_active else '本群进程未启动'})
     return {'checks':checks}
@@ -211,7 +222,13 @@ def delivery_action(gid,ident,action,confirmed=False):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
-    def valid_host(self):return self.headers.get('Host')==f'127.0.0.1:{PORT}'
+    def valid_host(self):
+        return len(self.headers.get_all('Host',[]))==1 and self.headers.get('Host')==f'127.0.0.1:{PORT}' and self.path.startswith('/') and not self.path.startswith('//') and not self.headers.get('Upgrade')
+    def bridge_request(self):
+        if self.headers.get('Host')==f'127.0.0.1:{SNOW_PORT}':
+            snowluma_bridge.handle(self,ACCESS)
+            return True
+        return False
     def learning_group(self,gid):
         current=settings.load();gid=int(gid)
         allowed={row['group_id'] for row in current['groups']}|{int(g) for g in current['plugin_groups']}|{int(g) for g in current.get('learning_groups',{})}|{current['connection']['group_id']}
@@ -223,9 +240,13 @@ class Handler(BaseHTTPRequestHandler):
             ACCESS.audit(self.session['username'],urlsplit(self.path).path,getattr(self,'audit_target',''))
         self.send_response(status)
         if cookie:self.send_header('Set-Cookie',cookie)
-        self.send_header('Content-Type',content_type);self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('X-Frame-Options','DENY');self.end_headers();self.wfile.write(data)
+        self.send_header('Content-Type',content_type);self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('X-Frame-Options','DENY');self.send_header('Content-Security-Policy',"frame-ancestors 'none'");self.send_header('Referrer-Policy','same-origin');self.end_headers()
+        if self.command!='HEAD':self.wfile.write(data)
     def do_GET(self):
+        if self.bridge_request():return
         if not self.valid_host():return self.reply({'error':'仅允许本机访问'},403)
+        if self.path=='/api/health':
+            return self.reply({'app_id':'nuebot','version':update_checker.current()['version'],'control_center':True,'bridge_port':SNOW_PORT})
         self.session=ACCESS.session(self.headers.get('Cookie'))
         if self.path=='/':
             template='panel.html' if self.session and self.session['role']=='admin' else 'custodian.html' if self.session else 'login.html'
@@ -240,6 +261,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/auth/audit':return self.reply({'entries':ACCESS.audit_entries()})
         if self.path=='/api/security':return self.reply({'policy':ai_guard.policy(settings.load()),'core_prompt':ai_guard.SYSTEM,'status':snapshot().get('security_counts',{}),'groups':[{k:row.get(k) for k in ('group','security_counts','fresh')} for row in group_workers.statuses()]})
         if self.path=='/api/settings':return self.reply(settings.load())
+        if self.path=='/api/snowluma/status':
+            value=snowluma_bridge.status()
+            return self.reply({**value,'bridge_available':True,'url':snowluma_bridge.BRIDGE_ORIGIN+'/',
+                               'message':'SnowLuma控制台已响应，请在下方完成QQ接入管理' if value['available'] else 'SnowLuma尚未运行，请在机器人所在机器打开官方控制台，再重新检查'})
         if self.path=='/api/updates':return self.reply(update_checker.state())
         if urlsplit(self.path).path=='/api/memory':
             try:
@@ -277,6 +302,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:return self.reply({'error':str(exc)},400)
         return self.reply({'error':'未找到'},404)
     def do_POST(self):
+        if self.bridge_request():return
         if not self.valid_host() or self.headers.get('Origin')!=ORIGIN:return self.reply({'error':'请通过管理页面操作'},403)
         self.session=ACCESS.session(self.headers.get('Cookie'));self.audit_action=False
         public=self.path in ('/api/auth/setup','/api/auth/login')
@@ -358,7 +384,30 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,KeyError,TypeError) as exc:return self.reply({'error':str(exc)},400)
         except Exception:return self.reply({'error':'操作失败，请检查本地运行状态'},500)
 
+    def do_HEAD(self):self.do_GET()
+    def bridge_only(self):
+        if not self.bridge_request():self.reply({'error':'不支持此操作'},403)
+    do_PUT=bridge_only
+    do_PATCH=bridge_only
+    do_DELETE=bridge_only
+    do_OPTIONS=bridge_only
+    def do_CONNECT(self):self.reply({'error':'不支持此操作'},403)
+    do_TRACE=do_CONNECT
+
+def serve():
+    main=ThreadingHTTPServer(('127.0.0.1',PORT),Handler)
+    try:qq=ThreadingHTTPServer(('127.0.0.1',SNOW_PORT),Handler)
+    except OSError:
+        main.server_close()
+        raise RuntimeError('QQ控制台入口端口被占用，请检查5101端口；未启动面板') from None
+    main.daemon_threads=qq.daemon_threads=True
+    thread=threading.Thread(target=qq.serve_forever,daemon=True)
+    thread.start()
+    update_checker.start()
+    try:main.serve_forever()
+    finally:
+        qq.shutdown();qq.server_close();main.server_close()
+
 if __name__=='__main__':
     if not settings.PATH.exists():settings.save(settings.defaults())
-    update_checker.start()
-    ThreadingHTTPServer(('127.0.0.1',PORT),Handler).serve_forever()
+    serve()
