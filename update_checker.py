@@ -55,7 +55,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
 def fetch(url):
     net=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
-    with net.open(urllib.request.Request(url,headers={'User-Agent':'NueBot-UpdateChecker/1.1','Accept':'application/json'}),timeout=8) as response:
+    with net.open(urllib.request.Request(url,headers={'User-Agent':'NueBot-UpdateChecker/1.1','Accept':'application/vnd.github.raw+json' if urlsplit(url).hostname=='api.github.com' else 'application/json'}),timeout=8) as response:
         raw=response.read(65537)
     if len(raw)>65536:raise ValueError('更新清单超过64KB')
     return json.loads(raw)

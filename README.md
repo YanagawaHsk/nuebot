@@ -30,7 +30,17 @@ py -3 -m venv .venv
 
 在“07 备份与工具”填写发布仓库 `main` 分支下 `latest.json` 的原始内容地址：
 
-`https://raw.githubusercontent.com/你的GitHub用户名/nuebot/main/latest.json`
+`https://raw.githubusercontent.com/YanagawaHsk/nuebot/main/latest.json`
+
+v1.1.2 起，如果原始文件域名访问超时，可以改用 GitHub 官方 API 地址：
+
+`https://api.github.com/repos/YanagawaHsk/nuebot/contents/latest.json`
+
+也可使用相同清单的公开镜像：
+
+`https://cdn.jsdelivr.net/gh/YanagawaHsk/nuebot@main/latest.json`
+
+镜像有缓存，新发布的版本可能延迟显示；能直接访问 GitHub 时优先使用原始地址。
 
 两端填写同一地址。默认每6小时检查一次，也可立即检查；显示新版本和下载地址。当前功能检查和提示更新，不自动安装，不同步你的密钥、人设、群配置、账号登录状态或学习日志。
 
