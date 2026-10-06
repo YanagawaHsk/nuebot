@@ -9,7 +9,7 @@ if action=='stop':
     HALT.write_text('Stopped from local control',encoding='utf-8');print('已请求停止所有群后台。')
 elif action=='start':
     config=panel_settings.load();groups=[row['group_id'] for row in config['groups'] if row['enabled']]
-    if not groups:print('请先在插件页面选择至少一个参与群并保存。');raise SystemExit(1)
+    if not groups:print('请先在多群接入页面选择至少一个参与群并保存。');raise SystemExit(1)
     if group_workers.locked(ROOT/'runner.lock'):print('旧版后台尚在运行，请先停止后再启动。');raise SystemExit(1)
     for directory in [ROOT]+[group_workers.directory(gid) for gid in groups]:
         for name in ('last-send.json','last-moderation.json'):

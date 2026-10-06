@@ -120,6 +120,23 @@ with patch.object(bot.opener,'open',return_value=Response()) as opened,patch.obj
 with patch.object(memory_learning.Store,'entries',return_value=[{'active':True,'deleted':False,'error':'','summary':'讨论表达','style_notes':['关闭天网','简短句子'],'interests':[],'cautions':[]}]):
     style=memory_learning.Store(100000003).supplement({**memory_learning.DEFAULT,'enabled':True})
     assert '关闭天网' not in style and '简短句子' in style
+
+# Multiple subscriptions produce distinct workers without opening QQ connections.
+import panel_settings,group_workers,runpy
+cfg=panel_settings.validate(bot.SETTINGS);cfg['groups']=[{'group_id':100000003,'enabled':True},{'group_id':100000005,'enabled':True}]
+panel_settings.save(cfg)
+assert group_workers.directory(100000003)!=group_workers.directory(100000005)
+with patch.object(sys,'argv',['control.py','start']),patch('subprocess.Popen') as popen:
+    runpy.run_path(str(bot.BASE/'control.py'))
+    assert popen.call_count==2
+    assert {c.args[0][-1] for c in popen.call_args_list}=={'100000003','100000005'}
+# A group worker can use the base catalog, never an unapproved directory.
+from pathlib import Path
+bot.ROOT=bot.BASE/'group-workers'/'100000005';bot.ROOT.mkdir(parents=True,exist_ok=True)
+sticker=bot.BASE/'stickers'/'test.bin';sticker.parent.mkdir(exist_ok=True);sticker.write_bytes(b'test-image')
+bot.STICKERS['test']={'local_file':str(sticker),'description':'test'}
+with patch.object(bot.shared_budget,'claim_interval',return_value=True),patch.object(bot,'dispatch',return_value=True) as dispatch:
+    assert bot.send_sticker('test') is True;dispatch.assert_called_once()
 print('Core chat, owner commands, request redaction, memory isolation and outgoing checks passed without network or QQ sends.')
 '''
             result=subprocess.run([sys.executable,'-c',code],cwd=root,capture_output=True,text=True,timeout=20)

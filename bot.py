@@ -347,7 +347,7 @@ def send_plugin(result):
 def send_sticker(sticker):
     if sticker not in STICKERS:raise ValueError('Sticker not in approved catalog')
     entry=STICKERS[sticker];path=Path(entry['local_file']).resolve()
-    if not path.is_relative_to((ROOT/'stickers').resolve()):raise ValueError('Sticker path not permitted')
+    if not path.is_relative_to((BASE/'stickers').resolve()):raise ValueError('Sticker path not permitted')
     raw=path.read_bytes()
     if len(raw)>6*1024*1024:raise ValueError('Sticker too large')
     if not shared_budget.claim_interval('sticker',SETTINGS['runtime']['sticker_hour'],SETTINGS['runtime']['sticker_interval']):return False
