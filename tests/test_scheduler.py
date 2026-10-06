@@ -364,7 +364,7 @@ class GateTests(unittest.TestCase):
     def test_actual_start_obeys_cooldown_added_after_acquire(self):
         policy = {**self.policy, 'queue_timeout': .06}
         with self.assertRaises(model_gate.QueueExpired):
-            with model_gate.acquire(self.key, 10, 'chat', policy):
+            with model_gate.acquire(self.key, 10, 'chat', self.policy):
                 model_gate.cooldown(self.key, urllib.error.HTTPError('', 429, 'limited', {'Retry-After': '120'}, None))
                 model_gate.start_request(self.key, policy)
         self.assertEqual(model_gate.snapshot(self.key)['active'], 0)
