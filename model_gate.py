@@ -107,7 +107,7 @@ def acquire(key,group,purpose,policy,cancel=lambda:False,deadline=None,notice=la
                 active=conn.execute('SELECT COUNT(*) FROM tickets WHERE service=? AND started>0',(key,)).fetchone()[0]
                 # Rotate across all waiting groups at the highest priority;
                 # merely avoiding the last group can starve a third group.
-                first=conn.execute('SELECT id FROM tickets WHERE service=? AND started=0 ORDER BY priority,(gid<=?),gid,created,id LIMIT 1',(key,gate[2])).fetchone()
+                first=conn.execute('SELECT id FROM tickets WHERE service=? AND started=0 ORDER BY priority,(gid<=?),gid,rowid LIMIT 1',(key,gate[2])).fetchone()
                 if now<end and first and first[0]==ident and active<policy['max_concurrent'] and now>=max(gate[:2]):
                     conn.execute('UPDATE tickets SET started=?,expires=? WHERE id=?',(now,now+policy['request_timeout']+_LEASE_GRACE,ident))
                     conn.execute('UPDATE gates SET next_start=?,last_group=? WHERE service=?',(now+policy['min_interval'],int(group),key));acquired=True

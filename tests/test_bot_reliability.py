@@ -25,11 +25,13 @@ bot.SETTINGS['learning_groups'][str(bot.GROUP)]={**memory.DEFAULT,'enabled':True
 def ev(mid,text,stamp=None):
  return {'group_id':bot.GROUP,'post_type':'message','user_id':100000004,'message_id':mid,'time':stamp or time.time(),'message':[{'type':'text','data':{'text':text}}]}
 # A late continuation invalidates its draft and both source parts survive.
-bot.receive(ev(1,'我想说个事情'));batch=list(bot.pending);bot.pending.clear()
-meta=bot.flow.stamp(batch,90)
-bot.receive(ev(2,'其实后面还有一句'))
-assert not bot.valid_reply(meta)
-bot.retry_batch(batch,model_gate.Cancelled('ReplySuperseded'))
+arrival=time.time()
+with patch.object(bot.time,'time',return_value=arrival):
+ bot.receive(ev(1,'我想说个事情'));batch=list(bot.pending);bot.pending.clear()
+ meta=bot.flow.stamp(batch,90)
+ bot.receive(ev(2,'其实后面还有一句'))
+ assert not bot.valid_reply(meta)
+ bot.retry_batch(batch,model_gate.Cancelled('ReplySuperseded'))
 assert [m['id'] for m in bot.pending]==[1,2]
 bot.restore_superseded(batch);assert len(bot.pending)==2
 # Explicit topic boundaries exclude other threads and old history from the model.

@@ -93,7 +93,7 @@ class Flow:
         candidates = []
         remaining = []
         for topic, batch in buckets.items():
-            batch.sort(key=lambda message: message['time'])
+            batch.sort(key=lambda message: (message['time'], self.messages.get(str(message.get('id')), {}).get('revision', 0)))
             first, last = batch[0]['time'], batch[-1]['time']
             unfinished = bool(re.search(r'(?:[，、：…]|\.\.\.|然后|但是|因为|比如|我还没说完|等我|我接着说)\s*$', batch[-1]['text']))
             quiet = policy['collect_incomplete'] if unfinished else policy['collect_quiet']

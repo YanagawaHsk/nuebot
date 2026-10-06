@@ -23,6 +23,15 @@ RUNTIME = {'collect_quiet': 12, 'collect_incomplete': 20, 'collect_max': 45, 're
 
 
 class FlowTests(unittest.TestCase):
+    def test_equal_timestamps_preserve_original_arrival_order_after_retry(self):
+        flow=conversation_flow.Flow()
+        topic,_=flow.observe(1,10,'第一段',100)
+        flow.observe(2,10,'第二段',100)
+        old={'id':1,'text':'第一段','time':100,'topic':topic}
+        newer={'id':2,'text':'第二段','time':100,'topic':topic}
+        pending=collections.deque([newer,old])
+        batch,_=flow.collect(pending,RUNTIME,112)
+        self.assertEqual([row['id'] for row in batch],[1,2])
     def setUp(self):
         self.flow = conversation_flow.Flow()
 
@@ -183,6 +192,22 @@ class GateTests(unittest.TestCase):
                 future.result(timeout=60)
         self.assertEqual(order, ['E', 'C', 'D', 'A', 'B', 'F'])
         self.assertEqual(model_gate.snapshot(self.key)['active'], 0)
+
+    def test_equal_ticket_timestamps_keep_insert_order_in_same_group(self):
+        from types import SimpleNamespace
+        order=[]
+        def job(label):
+            with model_gate.acquire(self.key,10,'chat',self.policy):order.append(label)
+        with patch.object(model_gate.time,'time',return_value=1000),patch.object(model_gate.uuid,'uuid4',side_effect=[SimpleNamespace(hex='z-first'),SimpleNamespace(hex='a-second')]):
+            self.block()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                first=pool.submit(job,'first')
+                self.until(lambda:model_gate.snapshot(self.key)['waiting']==1)
+                second=pool.submit(job,'second')
+                self.until(lambda:model_gate.snapshot(self.key)['waiting']==2)
+                self.unblock()
+                first.result(timeout=30);second.result(timeout=30)
+        self.assertEqual(order,['first','second'])
 
     def test_concurrency_and_spacing_across_threads(self):
         active = 0

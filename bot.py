@@ -657,7 +657,7 @@ def restore_superseded(batch):
             if represented!=current and not any(m.get('topic')==message.get('topic') for m in pending):continue
             message=dict(message);message.pop('retry_at',None)
             combined.append(message);waiting.add(str(ident))
-        combined.sort(key=lambda m:m['time'])
+        combined.sort(key=lambda m:(m['time'],flow.messages.get(str(m.get('id')),{}).get('revision',0)))
         pending.clear();pending.extend(combined)
 
 def retry_batch(batch,exc):
