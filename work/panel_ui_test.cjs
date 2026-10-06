@@ -80,7 +80,7 @@ for (const name of ['fields', 'extras', 'runtimeSchedulingDefaults', 'modelContr
   const declaration = script.match(new RegExp('^const ' + name + '=[^\\n]+', 'm'));
   assert(declaration, 'Missing declaration ' + name); vm.runInContext(declaration[0], context);
 }
-for (const name of ['makeFields', 'groupIds', 'ensureGroupConfig', 'runtimeDraft', 'collectRuntimeDraft', 'renderRuntimeDraft', 'renderModelControl', 'collectModelControl', 'collectLimits', 'collect', 'validateRuntimeTiming', 'validateNumericFields', 'renderConversationProgress', 'renderLearningHealth', 'learningError', 'deliveryReason', 'deliveryExpired', 'deliveryAction', 'readDeliveries']) vm.runInContext(extract(name), context);
+for (const name of ['makeFields', 'groupIds', 'ensureGroupConfig', 'runtimeDraft', 'collectRuntimeDraft', 'renderRuntimeDraft', 'renderModelControl', 'collectModelControl', 'collectLimits', 'collect', 'validateRuntimeTiming', 'validateNumericFields', 'renderConversationProgress', 'renderLearningHealth', 'diagnosticInfo', 'learningError', 'deliveryReason', 'deliveryExpired', 'deliveryAction', 'readDeliveries']) vm.runInContext(extract(name), context);
 vm.runInContext("makeFields('#runtime-fields',fields,'runtime');makeFields('#extra-fields',extras,'runtime');makeFields('#collection-fields',collectionFields,'runtime');makeFields('#retry-fields',retryFields,'runtime');makeFields('#model-control-fields',modelControlFields,'modelControl');", context);
 context.config = {
   connection: { group_id: 10001, base_url: 'https://example.invalid', model: 'fake-model', disable_thinking: true },

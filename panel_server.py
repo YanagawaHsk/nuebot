@@ -1,5 +1,6 @@
 """Loopback-only NueBot settings panel; credentials are never exposed."""
 import json,secrets,subprocess,sys,time,threading
+from datetime import datetime
 import urllib.request,urllib.error
 from urllib.parse import urlsplit,parse_qs
 from pathlib import Path
@@ -13,20 +14,26 @@ import shared_budget
 import plugin_manager
 import delivery_queue
 import error_log
+import model_gate
+import runtime_advice
 import memory_learning
 import update_checker
 import panel_auth
 import ai_guard
 import snowluma_bridge
+import panel_endpoint
 from local_identity import BOT_ID,OWNER_ID,DEFAULT_GROUP,onebot_path
 PLUGIN_ENGINE=plugin_features.Engine()
 ROOT=Path(__file__).resolve().parent
 ACCESS=panel_auth.Store(ROOT)
-PORT=5100
+PORT=panel_endpoint.PORT
 SNOW_PORT=snowluma_bridge.BRIDGE_PORT
 ORIGIN=f'http://127.0.0.1:{PORT}'
 TOKEN=secrets.token_urlsafe(32)
 SAVE_LOCK=threading.Lock()
+MODEL_TEST_LOCK=threading.Lock()
+MODEL_TEST_INTERVAL=30
+MODEL_TEST_NEXT=0.0
 RESTART={'pending':False,'error':None}
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
@@ -95,17 +102,67 @@ def save_configuration(body):
     return saved,changed and running
 
 def test_model(body):
-    c=settings.validate(body['settings'])['connection'];model=proposed_model(c,body.get('api_key',''))
-    req=urllib.request.Request(c['base_url']+'/models',headers={'Authorization':'Bearer '+model['api_key']})
+    global MODEL_TEST_NEXT
+    validated=settings.validate(body['settings']);c=validated['connection'];model=proposed_model(c,body.get('api_key',''))
+    # One shared limit across accounts/groups; rejected clicks do not erase the
+    # last actual test result. The request contains only this fixed test text.
+    with MODEL_TEST_LOCK:
+        now=time.monotonic()
+        previous=error_log.model_probe().get('latest')
+        recent=False
+        if previous:
+            try:recent=0<=time.time()-datetime.fromisoformat(previous['time']).timestamp()<MODEL_TEST_INTERVAL
+            except (ValueError,TypeError):pass
+        if now<MODEL_TEST_NEXT or recent:raise ValueError('模型测试需间隔30秒，请等待后再试，避免增加服务限流')
+        MODEL_TEST_NEXT=now+MODEL_TEST_INTERVAL
+    started=time.monotonic();code='UnknownError';ok=False
+    current=json.loads((ROOT/'model.json').read_text(encoding='utf-8'))
+    saved=settings.load()['connection']
+    configuration='saved' if (model=={k:current.get(k) for k in ('base_url','model','api_key')} and c['disable_thinking']==saved['disable_thinking']) else 'draft'
+    revision=str((ROOT/'model.json').stat().st_mtime_ns) if configuration=='saved' else ''
+    payload={'model':c['model'],'messages':[{'role':'user','content':'请只回复 OK。'}],'max_tokens':16,'temperature':0}
+    if c['disable_thinking']:payload['thinking']={'type':'disabled'}
+    req=urllib.request.Request(c['base_url']+'/chat/completions',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+model['api_key'],'Content-Type':'application/json'})
+    service=model_gate.service(model['base_url'],model['api_key'])
     try:
-        with opener.open(req,timeout=10) as r:
-            if r.geturl()!=req.full_url:raise ValueError('API发生重定向，请填写最终地址')
-            data=json.load(r)
-        found=any(m.get('id')==c['model'] for m in data.get('data',[]))
-        return {'ok':True,'message':'连接成功，已找到所选模型' if found else 'API连接成功；列表中未找到该模型，请核对名称（部分服务不列出全部模型）'}
-    except urllib.error.HTTPError as exc:raise ValueError(f'模型服务返回 {exc.code}，请核对地址与密钥') from None
-    except ValueError:raise
-    except Exception:raise ValueError('模型连接失败或超时，请核对地址与网络') from None
+        # Use the saved shared gate policy so a testing draft cannot loosen the
+        # global concurrency/spacing controls. It is lower priority than chat.
+        policy=settings.load()['model_control']
+        with model_gate.acquire(service,c['group_id'],'learning',policy):
+            model_gate.start_request(service,policy)
+            timeout=min(10,policy['request_timeout']);deadline=time.monotonic()+timeout
+            with opener.open(req,timeout=timeout) as r:
+                if r.geturl()!=req.full_url:raise ValueError('RedirectRejected')
+                chunks=[];size=0
+                while True:
+                    remaining=deadline-time.monotonic()
+                    if remaining<=0:raise TimeoutError('ModelRequestTimeout')
+                    transport=getattr(getattr(getattr(r,'fp',None),'raw',None),'_sock',None)
+                    if transport is not None:transport.settimeout(remaining)
+                    chunk=r.read1(4096) if hasattr(r,'read1') else r.read(65537)
+                    if not chunk:break
+                    size+=len(chunk)
+                    if size>65536:raise ValueError('ModelResponseTooLarge')
+                    chunks.append(chunk)
+                data=json.loads(b''.join(chunks))
+            choices=data.get('choices') if isinstance(data,dict) else None
+            message=choices[0].get('message') if isinstance(choices,list) and choices and isinstance(choices[0],dict) else None
+            if not isinstance(message,dict) or not isinstance(message.get('content'),str) or not message['content'].strip():raise ValueError('EmptyReply')
+        ok=True;code='HTTP200'
+        return {'ok':True,'message':'固定短文本生成测试成功；未读取群聊，仅代表本次测试结果','synthetic':True,'ttl_seconds':error_log.PROBE_TTL}
+    except Exception as exc:
+        code=error_log.safe_code(error_log.fields(exc).get('code') or type(exc).__name__)
+        raise ValueError(error_log.suggestion(code)) from None
+    finally:
+        error_log.save_model_probe(ok,code,(time.monotonic()-started)*1000,configuration,revision,c['disable_thinking'])
+
+def reply_health(group,hours=24):
+    workers=group_workers.statuses()
+    worker=next((row for row in workers if row.get('group')==group),{})
+    current=settings.load()
+    value=error_log.reply_health(group,hours,worker,disable_thinking=current['connection']['disable_thinking'])
+    value['recommendations']=runtime_advice.recommendations(current,group)
+    return value
 
 def control(action):
     result=subprocess.run([sys.executable,'-X','utf8',str(ROOT/'control.py'),action],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=15,creationflags=subprocess.CREATE_NO_WINDOW)
@@ -252,6 +309,8 @@ class Handler(BaseHTTPRequestHandler):
             template='panel.html' if self.session and self.session['role']=='admin' else 'custodian.html' if self.session else 'login.html'
             token=self.session['csrf'] if self.session else TOKEN
             page=(ROOT/template).read_text(encoding='utf-8').replace('__CSRF__',token).replace('__VERSION__',update_checker.current()['version']).replace('__SETUP__','false' if ACCESS.initialized() else 'true')
+            page=page.replace('http://127.0.0.1:5101',snowluma_bridge.BRIDGE_ORIGIN)
+            if panel_endpoint.PROFILE=='local':page=page.replace('本机管理</span>','本机管理 · 5102</span>')
             return self.reply(page.replace('__BOT_ID__',str(BOT_ID)).replace('__OWNER_ID__',str(OWNER_ID)).replace('__DEFAULT_GROUP__',str(DEFAULT_GROUP)),content_type='text/html; charset=utf-8')
         if not self.session:return self.reply({'error':'请先登录'},401)
         if self.headers.get('X-Panel-Token')!=self.session['csrf']:return self.reply({'error':'请刷新管理页面'},403)
@@ -279,6 +338,15 @@ class Handler(BaseHTTPRequestHandler):
                 value=error_log.entries(gid,offset,query.get('category',['all'])[0]) if urlsplit(self.path).path=='/api/errors' else delivery_queue.entries(gid,offset)
                 return self.reply(value)
             except Exception:return self.reply({'error':'无法读取该群日志，请检查群号或本机存储'},400)
+        if urlsplit(self.path).path=='/api/reply-health':
+            try:
+                query=parse_qs(urlsplit(self.path).query)
+                requested=query.get('group',query.get('group_id',[settings.load()['connection']['group_id']]))
+                if len(requested)!=1 or len(query.get('hours',['24']))!=1:raise ValueError('统计参数不正确')
+                gid=self.learning_group(requested[0]);hours=int(query.get('hours',['24'])[0])
+                return self.reply(reply_health(gid,hours))
+            except (ValueError,TypeError):return self.reply({'error':'请检查已配置群号及1至168小时统计窗口'},400)
+            except Exception:return self.reply({'error':'无法读取安全统计，请检查本机存储'},500)
         if self.path=='/api/status':
             status=snapshot()
             if self.session['role']=='custodian':
@@ -399,7 +467,7 @@ def serve():
     try:qq=ThreadingHTTPServer(('127.0.0.1',SNOW_PORT),Handler)
     except OSError:
         main.server_close()
-        raise RuntimeError('QQ控制台入口端口被占用，请检查5101端口；未启动面板') from None
+        raise RuntimeError(f'QQ控制台入口端口被占用，请检查{SNOW_PORT}端口；未启动面板') from None
     main.daemon_threads=qq.daemon_threads=True
     thread=threading.Thread(target=qq.serve_forever,daemon=True)
     thread.start()

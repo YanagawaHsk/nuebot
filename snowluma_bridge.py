@@ -16,14 +16,16 @@ import zlib
 from http.cookies import CookieError, SimpleCookie
 from urllib.parse import unquote, urlsplit
 
-BRIDGE_PORT = 5101
-BRIDGE_HOST = '127.0.0.1:5101'
-BRIDGE_ORIGIN = 'http://127.0.0.1:5101'
-PARENT_ORIGIN = 'http://127.0.0.1:5100'
+import panel_endpoint
+BRIDGE_PORT = panel_endpoint.BRIDGE_PORT
+BRIDGE_HOST = f'127.0.0.1:{BRIDGE_PORT}'
+BRIDGE_ORIGIN = panel_endpoint.BRIDGE_ORIGIN
+PARENT_ORIGIN = panel_endpoint.ORIGIN
 UPSTREAM_HOST = '127.0.0.1'
 UPSTREAM_PORT = 5099
 UPSTREAM_ORIGIN = 'http://127.0.0.1:5099'
 AVATAR_COOKIE = 'snowluma_avatar_session'
+CLIENT_AVATAR_COOKIE = 'snowluma_avatar_session_local' if panel_endpoint.PROFILE=='local' else AVATAR_COOKIE
 CONNECT_TIMEOUT = 2.0
 RESPONSE_TIMEOUT = 10.0
 STREAM_IDLE_TIMEOUT = 300.0
@@ -201,8 +203,10 @@ def _cookies(cookie):
     try:
         parsed = SimpleCookie()
         parsed.load(cookie)
-        item = parsed.get(AVATAR_COOKIE)
-        return item.OutputString(attrs=[]) if item else ''
+        item = parsed.get(CLIENT_AVATAR_COOKIE)
+        if not item:return ''
+        upstream=SimpleCookie();upstream[AVATAR_COOKIE]=item.value
+        return upstream[AVATAR_COOKIE].OutputString(attrs=[])
     except CookieError:
         return ''
 
@@ -216,6 +220,10 @@ def _set_cookie(value):
         if set(parsed) != {AVATAR_COOKIE}:
             return None
         item = parsed[AVATAR_COOKIE]
+        if CLIENT_AVATAR_COOKIE!=AVATAR_COOKIE:
+            browser=SimpleCookie();browser[CLIENT_AVATAR_COOKIE]=item.value
+            for attribute,setting in item.items():browser[CLIENT_AVATAR_COOKIE][attribute]=setting
+            item=browser[CLIENT_AVATAR_COOKIE]
         item['domain'] = ''
         item['path'] = '/'
         item['samesite'] = 'Strict'

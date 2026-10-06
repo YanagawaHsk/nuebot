@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 ROOT=Path(__file__).resolve().parent
 PATH=ROOT/'settings.json'
 RANGES={'collect_quiet':(5,60),'collect_incomplete':(5,90),'collect_max':(15,120),'reply_ttl':(30,180),'topic_gap':(60,900),'retry_attempts':(1,5),'retry_base':(3,60),'context_age':(60,1800),'context_messages':(1,40),'output_tokens':(32,4096),'messages_hour':(1,120),'model_calls_hour':(1,360),'cooldown_seconds':(0,3600),'delay_min':(0,60),'delay_max':(0,90),'mention_probability':(0,1),'topic_interval':(300,86400),'sticker_hour':(0,30),'sticker_interval':(0,3600)}
-DEFAULT_RUNTIME={'collect_quiet':12,'collect_incomplete':20,'collect_max':45,'reply_ttl':90,'topic_gap':120,'context_age':300,'auto_retry':True,'retry_attempts':3,'retry_base':5,'context_messages':15,'output_tokens':128,'messages_hour':30,'model_calls_hour':120,'cooldown_seconds':120,'delay_min':8,'delay_max':12,'mention_probability':.9,'topic_enabled':True,'topic_interval':3600,'stickers_enabled':True,'sticker_hour':3,'sticker_interval':600,'challenge_filter':True,'catchphrase_filter':True,'chat_enabled':True,'mention_only':False}
+DEFAULT_RUNTIME={'collect_quiet':12,'collect_incomplete':20,'collect_max':45,'reply_ttl':120,'topic_gap':120,'context_age':300,'auto_retry':True,'retry_attempts':3,'retry_base':5,'context_messages':15,'output_tokens':128,'messages_hour':30,'model_calls_hour':120,'cooldown_seconds':120,'delay_min':8,'delay_max':12,'mention_probability':.9,'topic_enabled':True,'topic_interval':3600,'stickers_enabled':True,'sticker_hour':3,'sticker_interval':600,'challenge_filter':True,'catchphrase_filter':True,'chat_enabled':True,'mention_only':False}
 DEFAULT_RELATIONSHIPS=[]
 
 def connection_defaults():

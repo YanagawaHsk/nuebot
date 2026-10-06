@@ -139,6 +139,76 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(len(self.flow.messages), 1000)
         self.assertTrue(self.flow.valid(draft, 105))
 
+    def test_other_speakers_do_not_reset_or_cancel_a_mention_turn(self):
+        mention = self.message(1, '@鵺 今天适合散步吗', 100)
+        draft = self.flow.stamp([mention], 90)
+        topic, _ = self.flow.observe(2, 20002, '我在聊另一件事', 111)
+        chatter = {'id': 2, 'text': '我在聊另一件事', 'time': 111, 'topic': topic, 'mentioned': False}
+        self.assertEqual(topic, mention['topic'])
+        self.assertTrue(self.flow.valid(draft, 112))
+        pending = collections.deque([mention, chatter])
+        batch, _ = self.flow.collect(pending, RUNTIME, 112)
+        self.assertEqual([row['id'] for row in batch], [1])
+        self.assertEqual([row['id'] for row in pending], [2])
+
+    def test_explicit_quote_from_another_person_is_a_real_continuation(self):
+        mention = self.message(1, '@鵺 能帮忙看看吗', 100)
+        draft = self.flow.stamp([mention], 90)
+        topic, _ = self.flow.observe(2, 20002, '我补充这个条件', 110, reply_to=1)
+        quoted = {'id': 2, 'text': '我补充这个条件', 'time': 110, 'topic': topic, 'mentioned': False}
+        self.assertFalse(self.flow.valid(draft, 112))
+        pending = collections.deque([mention, quoted])
+        self.assertIsNone(self.flow.collect(pending, RUNTIME, 121)[0])
+        batch, _ = self.flow.collect(pending, RUNTIME, 122)
+        self.assertEqual([row['id'] for row in batch], [1, 2])
+        self.assertTrue(self.flow.valid(self.flow.stamp(batch, 90), 122))
+
+    def test_ignored_input_does_not_cancel_an_accepted_question(self):
+        mention = self.message(1, '@鵺 今天天气如何', 100)
+        draft = self.flow.stamp([mention], 90)
+        self.flow.observe(2, 10001, '不进入回复队列的输入', 105, actionable=False)
+        self.assertTrue(self.flow.valid(draft, 112))
+        self.assertEqual(self.flow.collect(collections.deque([mention]), RUNTIME, 112)[0], [mention])
+
+    def test_fresh_continuation_keeps_original_mention_anchor(self):
+        question = self.message(1, '@鵺 先说我的问题', 100)
+        continuation = self.message(2, '最后补充一个条件', 185)
+        pending = collections.deque([question, continuation])
+        batch, _ = self.flow.collect(pending, RUNTIME, 197)
+        self.assertEqual([row['id'] for row in batch], [1, 2])
+        meta = self.flow.stamp(batch, 90)
+        self.assertTrue(meta['mentioned'])
+        self.assertEqual(meta['expires'], 275)
+        self.assertTrue(self.flow.valid(meta, 197))
+
+    def test_unrelated_chatter_cannot_keep_an_old_mention_alive(self):
+        mention = self.message(1, '@鵺 早先的问题', 100)
+        topic, _ = self.flow.observe(2, 20002, '晚到的无关话', 190)
+        chatter = {'id': 2, 'text': '晚到的无关话', 'time': 190, 'topic': topic, 'mentioned': False}
+        pending = collections.deque([mention, chatter])
+        self.assertIsNone(self.flow.collect(pending, RUNTIME, 195)[0])
+        self.assertEqual(self.flow.last_expired, 1)
+        self.assertEqual([row['id'] for row in pending], [2])
+
+    def test_long_window_never_shortens_an_explicit_unfinished_sentence(self):
+        first = self.message(1, '@鵺 我慢慢解释', 100)
+        latest = self.message(2, '还有一个原因，因为', 149)
+        pending = collections.deque([first, latest])
+        self.assertIsNone(self.flow.collect(pending, RUNTIME, 157)[0])
+        self.assertEqual(len(self.flow.collect(pending, RUNTIME, 169)[0]), 2)
+
+    def test_mentions_use_their_pause_without_bypassing_ordinary_cooldown(self):
+        mention = self.message(1, '@鵺 问一个问题', 100)
+        topic, _ = self.flow.observe(2, 20002, '普通聊天', 140)
+        ordinary = {'id': 2, 'text': '普通聊天', 'time': 140, 'topic': topic, 'mentioned': False}
+        pending = collections.deque([mention, ordinary])
+        batch, _ = self.flow.collect(pending, RUNTIME, 150, ordinary_not_before=200, mention_not_before=112)
+        self.assertEqual([row['id'] for row in batch], [1])
+        batch, state = self.flow.collect(pending, RUNTIME, 199, ordinary_not_before=200, mention_not_before=112)
+        self.assertIsNone(batch)
+        self.assertEqual(state['phase'], 'cooldown')
+        self.assertEqual([row['id'] for row in self.flow.collect(pending, RUNTIME, 200, ordinary_not_before=200)[0]], [2])
+
 
 class GateTests(unittest.TestCase):
     def setUp(self):

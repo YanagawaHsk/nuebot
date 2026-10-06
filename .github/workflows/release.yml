@@ -7,7 +7,7 @@ on:
       tag:
         description: 'Version tag matching version.json, e.g. v1.1.1'
         required: true
-        default: v1.7.0
+        default: v1.8.0
 permissions:
   contents: write
 concurrency:
@@ -31,6 +31,8 @@ jobs:
         run: node work/panel_ui_test.cjs
       - name: Test unified QQ control center
         run: node tests/control_center_ui_test.cjs
+      - name: Test reply health panel
+        run: node tests/reply_health_ui_test.cjs
       - name: Build only allowlisted files
         run: python tools/build_release.py
       - name: Publish release and update manifest

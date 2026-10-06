@@ -2,7 +2,9 @@
 import argparse,json,socket,subprocess,sys,time,urllib.error,urllib.request,webbrowser
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
-URL='http://127.0.0.1:5100/'
+sys.path.insert(0,str(ROOT))
+import panel_endpoint
+URL=panel_endpoint.ORIGIN+'/'
 APP_ID='nuebot'
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -11,7 +13,7 @@ opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
 
 def port_in_use():
     try:
-        with socket.create_connection(('127.0.0.1',5100),timeout=.4):return True
+        with socket.create_connection(('127.0.0.1',panel_endpoint.PORT),timeout=.4):return True
     except ConnectionRefusedError:return False
     except OSError:return True  # Ambiguous timeouts must not start over another service.
 
@@ -23,7 +25,7 @@ def probe_service():
             responding=True
             health=json.loads(response.read(8192).decode('utf-8'))
         if isinstance(health,dict) and health.get('app_id')==APP_ID:
-            if health.get('control_center') is True and health.get('bridge_port')==5101:
+            if health.get('control_center') is True and health.get('bridge_port')==panel_endpoint.BRIDGE_PORT:
                 return {'state':'ready','version':str(health.get('version',''))[:80]}
             return {'state':'legacy'}
         if isinstance(health,dict) and health.get('app_id'):return {'state':'foreign'}

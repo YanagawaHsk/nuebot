@@ -6,7 +6,8 @@ from http.cookies import SimpleCookie,CookieError
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
-COOKIE='nue_session'
+import panel_endpoint
+COOKIE=panel_endpoint.COOKIE
 TTL=8*3600
 
 class AccessError(ValueError):
