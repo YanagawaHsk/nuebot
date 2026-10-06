@@ -11,6 +11,8 @@ import plugin_features
 import group_workers
 import shared_budget
 import plugin_manager
+import delivery_queue
+import error_log
 import memory_learning
 import update_checker
 import panel_auth
@@ -29,7 +31,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
 
 def onebot(action,body):
-    if action not in ('get_group_list','get_group_info','get_login_info'):raise ValueError('只允许读取连接信息')
+    if action not in ('get_group_list','get_group_info','get_login_info','get_group_msg_history'):raise ValueError('只允许读取连接信息')
     path=onebot_path()
     config=json.loads(path.read_text(encoding='utf-8'))
     endpoint=next(n for n in config['networks']['httpServers'] if n['host']=='127.0.0.1' and n['port']==3000)
@@ -155,6 +157,58 @@ def diagnostics(group=None):
     checks.append({'name':'本群后台','ok':group_active,'message':'本群进程运行中' if group_active else '本群进程未启动'})
     return {'checks':checks}
 
+def resolve_delivery_marker(gid,ident,state):
+    path=group_workers.directory(gid)/'last-send.json'
+    if not path.exists():return
+    value=json.loads(path.read_text(encoding='utf-8'))
+    if value.get('delivery_id')!=ident:return
+    value['state']=state
+    tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');shared_budget.replace_with_retry(tmp,path)
+
+def delivery_action(gid,ident,action,confirmed=False):
+    if not group_workers.locked(group_workers.directory(gid)/'runner.lock'):delivery_queue.recover(gid)
+    row=delivery_queue.get(gid,ident)
+    if action=='retry':
+        current=settings.load()
+        if not any(r['group_id']==gid and r['enabled'] for r in current['groups']):raise ValueError('本群未参与，不能重发')
+        delivery_queue.schedule(gid,ident,confirmed)
+        resolve_delivery_marker(gid,ident,'NOT_SENT')
+        return {'message':'已加入本群重发队列；启动本群后台后，按当前冷却、安静模式和额度发送。'}
+    if action=='dismiss':
+        delivery_queue.dismiss(gid,ident);return {'message':'已归档，不会发送。'}
+    if action=='confirm_sent':
+        if row['state']!='unknown' or confirmed is not True:raise ValueError('请先确认这条消息已在QQ发出')
+        delivery_queue.mark(gid,ident,'confirmed');resolve_delivery_marker(gid,ident,'CONFIRMED')
+        return {'message':'已标记为已发送，不会重发；可按需重新启动机器人。'}
+    if action=='confirm_unsent':
+        delivery_queue.confirm_unsent(gid,ident,confirmed)
+        resolve_delivery_marker(gid,ident,'NOT_SENT')
+        return {'message':'已按你的核对结果归档为未发送，不会补发；可按需重新启动机器人。'}
+    if action=='verify':
+        if row['state'] not in ('unknown','pending'):raise ValueError('此记录无需核验')
+        path=group_workers.directory(gid)/'last-send.json'
+        last=json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+        if last.get('delivery_id')==ident and last.get('state')=='CONFIRMED' and isinstance(last.get('receipt'),dict) and last['receipt'].get('message_id') is not None:
+            delivery_queue.mark(gid,ident,'confirmed',receipt=last['receipt']['message_id']);return {'message':'本机已有成功回执，已确认发送。'}
+        if onebot('get_login_info',{}).get('user_id')!=BOT_ID:raise ValueError('当前QQ账号不匹配')
+        payload=delivery_queue.get(gid,ident,payload=True)
+        if any(p.get('type') not in ('text','reply') for p in payload['segments']):return {'message':'图片消息不能可靠自动比对；请在QQ核对后选择确认已发送、确认未发送并放弃，或确认未发出并重发。'}
+        expected=''.join(str(p['data'].get('text','')) for p in payload['segments'] if p.get('type')=='text')
+        expected_reply=[str(p.get('data',{}).get('id')) for p in payload['segments'] if p.get('type')=='reply']
+        history=onebot('get_group_msg_history',{'group_id':gid,'count':40})
+        for event in history.get('messages',[]):
+            if event.get('user_id')!=BOT_ID or not row['created']-1<=event.get('time',0)<=row['updated']+120:continue
+            if event.get('message_id') is None:continue
+            segments=event.get('message',[])
+            if not isinstance(segments,list) or any(p.get('type') not in ('text','reply') for p in segments):continue
+            if expected_reply and [str(p.get('data',{}).get('id')) for p in segments if p.get('type')=='reply']!=expected_reply:continue
+            if ''.join(str(p.get('data',{}).get('text','')) for p in segments if p.get('type')=='text')==expected:
+                delivery_queue.mark(gid,ident,'confirmed',receipt=event.get('message_id'));resolve_delivery_marker(gid,ident,'CONFIRMED')
+                return {'message':'QQ近期记录中已有机器人发送的相同文字，已确认，不再重发。'}
+        return {'message':'最近40条QQ记录中未找到对应消息；这不能证明没有发出，请在QQ人工核对后再选择。'}
+    raise ValueError('操作不正确')
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def valid_host(self):return self.headers.get('Host')==f'127.0.0.1:{PORT}'
@@ -194,6 +248,12 @@ class Handler(BaseHTTPRequestHandler):
                 rows=memory_learning.Store(gid).entries()
                 return self.reply({'entries':rows[offset:offset+50],'total':len(rows),'offset':offset})
             except (ValueError,OSError):return self.reply({'error':'无法读取该群学习记录，请检查群号'},400)
+        if urlsplit(self.path).path in ('/api/errors','/api/deliveries'):
+            try:
+                query=parse_qs(urlsplit(self.path).query);gid=self.learning_group(query.get('group_id',['0'])[0]);offset=int(query.get('offset',['0'])[0])
+                value=error_log.entries(gid,offset,query.get('category',['all'])[0]) if urlsplit(self.path).path=='/api/errors' else delivery_queue.entries(gid,offset)
+                return self.reply(value)
+            except Exception:return self.reply({'error':'无法读取该群日志，请检查群号或本机存储'},400)
         if self.path=='/api/status':
             status=snapshot()
             if self.session['role']=='custodian':
@@ -274,6 +334,9 @@ class Handler(BaseHTTPRequestHandler):
                 command=PLUGIN_ENGINE.detect(text,{'group_id':int(body.get('group_id',current['connection']['group_id'])),'user_id':uid,'message':[]},current['plugin_groups'].get(str(body.get('group_id',current['connection']['group_id'])),plugin_features.validate({})))
                 result=PLUGIN_ENGINE.execute(command,current['plugin_groups'].get(str(body.get('group_id',current['connection']['group_id'])),plugin_features.validate({})),preview=True) if command else None
                 return self.reply({'matched':command['id'] if command else None,'text':result['text'] if result else '没有命中已启用功能','has_image':bool(result and result.get('image')),'note':'仅本机试用，不发QQ消息、不请求外部接口、不计入额度'})
+            if self.path=='/api/delivery':
+                gid=self.learning_group(body.get('group_id',0));self.audit_target=str(gid)+':'+str(body.get('id',''))
+                return self.reply(delivery_action(gid,body.get('id',''),body.get('action'),body.get('confirmed') is True))
             if self.path=='/api/quiet':return self.reply(chat_control.set_quiet(body.get('minutes'),self.learning_group(body.get('group_id',settings.load()['connection']['group_id']))))
             if self.path=='/api/test-model':return self.reply(test_model(body))
             if self.path=='/api/control':
