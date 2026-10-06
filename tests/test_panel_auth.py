@@ -108,12 +108,12 @@ class HttpTests(unittest.TestCase):
         self.assertNotIn('id="persona"',self.request('/',cookie=self.helper)[1])
         self.assertIn('账号与权限',self.request('/',cookie=self.admin)[1])
     def test_every_custodian_write_endpoint_denied_except_control(self):
-        paths=('/api/settings','/api/memory','/api/plugin-manage','/api/plugin-preview','/api/quiet','/api/test-model','/api/preview','/api/updates','/api/auth/users')
+        paths=('/api/settings','/api/memory','/api/plugin-manage','/api/plugin-preview','/api/quiet','/api/test-model','/api/preview','/api/updates','/api/security-preview','/api/auth/users')
         with patch.object(self.s.settings,'save') as save,patch.object(self.s,'control') as control:
             for p in paths:self.assertEqual(self.request(p,{},self.helper,self.helper_csrf)[0],403,p)
             save.assert_not_called();control.assert_not_called()
     def test_custodian_cannot_read_private_configuration(self):
-        for path in ('/api/settings','/api/memory?group_id=100000003','/api/plugins','/api/connection','/api/groups','/api/auth/users','/api/auth/audit'):
+        for path in ('/api/settings','/api/memory?group_id=100000003','/api/plugins','/api/connection','/api/groups','/api/auth/users','/api/auth/audit','/api/security'):
             self.assertEqual(self.request(path,cookie=self.helper,csrf=self.helper_csrf)[0],403,path)
     def test_control_permitted_and_audited(self):
         with patch.object(self.s,'control',return_value='done') as control:

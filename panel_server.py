@@ -14,6 +14,7 @@ import plugin_manager
 import memory_learning
 import update_checker
 import panel_auth
+import ai_guard
 from local_identity import BOT_ID,OWNER_ID,DEFAULT_GROUP,onebot_path
 PLUGIN_ENGINE=plugin_features.Engine()
 ROOT=Path(__file__).resolve().parent
@@ -118,7 +119,7 @@ def snapshot():
     return status
 
 def recent_events():
-    labels={'plugin_sent':'插件回复已发送','plugin_error':'插件请求失败','settings_applied':'设置已应用','settings_error':'设置读取失败','websocket_connected':'QQ消息连接成功','websocket_error':'QQ消息连接中断，等待重连','runner_started':'机器人已启动','runner_stopped':'机器人已停止','message_sent':'消息已发送','model_error':'模型请求失败','fatal':'运行出现错误','send_unknown':'发送结果待核实，已停止','moderation_warning':'天网已提醒','moderation_mute':'天网已执行个人禁言','moderation_error':'天网检测失败','moderation_missing_permission':'天网缺少管理员权限','moderation_unknown':'管理结果待核实，已停止','stale_reply_discarded':'已丢弃过时回复','owner_stop':'创造者请求停止','chat_paused':'创造者开启安静模式','chat_resumed':'创造者恢复接话'}
+    labels={'plugin_sent':'插件回复已发送','plugin_error':'插件请求失败','settings_applied':'设置已应用','security_input_blocked':'已隔离越权聊天指令','security_output_blocked':'已拦截可疑模型输出','security_learning_blocked':'已拦截可疑学习结果','security_learning_filtered':'已过滤学习中的越权条目','settings_error':'设置读取失败','websocket_connected':'QQ消息连接成功','websocket_error':'QQ消息连接中断，等待重连','runner_started':'机器人已启动','runner_stopped':'机器人已停止','message_sent':'消息已发送','model_error':'模型请求失败','fatal':'运行出现错误','send_unknown':'发送结果待核实，已停止','moderation_warning':'天网已提醒','moderation_mute':'天网已执行个人禁言','moderation_error':'天网检测失败','moderation_missing_permission':'天网缺少管理员权限','moderation_unknown':'管理结果待核实，已停止','stale_reply_discarded':'已丢弃过时回复','owner_stop':'创造者请求停止','chat_paused':'创造者开启安静模式','chat_resumed':'创造者恢复接话'}
     path=ROOT/'events.log'
     if not path.exists():return {'events':[]}
     # Read only a bounded tail, and expose event labels rather than raw fields or chats.
@@ -173,6 +174,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/auth/session':return self.reply({k:self.session[k] for k in ('username','role','expires')})
         if self.path=='/api/auth/users':return self.reply({'users':ACCESS.users()})
         if self.path=='/api/auth/audit':return self.reply({'entries':ACCESS.audit_entries()})
+        if self.path=='/api/security':return self.reply({'policy':ai_guard.policy(settings.load()),'core_prompt':ai_guard.SYSTEM,'status':snapshot().get('security_counts',{}),'groups':[{k:row.get(k) for k in ('group','security_counts','fresh')} for row in group_workers.statuses()]})
         if self.path=='/api/settings':return self.reply(settings.load())
         if self.path=='/api/updates':return self.reply(update_checker.state())
         if urlsplit(self.path).path=='/api/memory':
@@ -227,6 +229,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply({'ok':True},cookie=panel_auth.expired_cookie())
             if self.path=='/api/auth/users':
                 ACCESS.manage(self.session['username'],body);return self.reply({'users':ACCESS.users()})
+            if self.path=='/api/security-preview':
+                text=body.get('text','')
+                if not isinstance(text,str) or len(text)>4000:raise ValueError('试用文字需在4000字以内')
+                config=ai_guard.validate(body.get('security',{}));reason=ai_guard.input_reason(text,config)
+                return self.reply({'blocked':bool(reason),'reason':reason,'reply':ai_guard.rejection(config) if reason else [],'note':'仅本地规则试用，不调用模型，不发QQ消息；模式规则不能保证识别所有攻击'})
             if self.path=='/api/updates':
                 if body.get('action')=='save':update_checker.save(body.get('config'))
                 elif body.get('action')=='check':return self.reply(update_checker.check())
