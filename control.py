@@ -1,5 +1,7 @@
 import json,subprocess,sys,time
 from pathlib import Path
+for stream in (sys.stdout,sys.stderr):
+    if hasattr(stream,"reconfigure"):stream.reconfigure(encoding="utf-8",errors="replace")
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT))
 import panel_settings,group_workers,shared_budget

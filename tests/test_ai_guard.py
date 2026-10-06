@@ -139,7 +139,8 @@ with patch.object(bot.shared_budget,'claim_interval',return_value=True),patch.ob
     assert bot.send_sticker('test') is True;dispatch.assert_called_once()
 print('Core chat, owner commands, request redaction, memory isolation and outgoing checks passed without network or QQ sends.')
 '''
-            result=subprocess.run([sys.executable,'-c',code],cwd=root,capture_output=True,text=True,timeout=20)
+            result=subprocess.run([sys.executable,'-c',code],cwd=root,capture_output=True,text=True,encoding="utf-8",timeout=20)
             self.assertEqual(result.returncode,0,result.stderr)
 
 if __name__=='__main__':unittest.main()
+
