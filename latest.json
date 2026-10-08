@@ -1,7 +1,7 @@
 {
   "app_id": "nuebot",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "release_notes": "公开程序发布；账号配置保留本机。详情见 CHANGELOG.md。",
-  "download_url": "https://github.com/YanagawaHsk/nuebot/releases/download/v1.8.5/nuebot-1.8.5-windows.zip",
-  "sha256": "5c1cbec9ae11580b60fb10d76fa4775eb0bf428ea34bfc7c88dca6aa74e6390e"
+  "download_url": "https://github.com/YanagawaHsk/nuebot/releases/download/v1.8.6/nuebot-1.8.6-windows.zip",
+  "sha256": "53a4d91d1ed586a0bdb3f8546119688243ebb9bf310c780b4763a739f44e2879"
 }
