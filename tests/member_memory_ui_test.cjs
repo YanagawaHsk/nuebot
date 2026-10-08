@@ -41,7 +41,7 @@ let allow = true;
 const context = vm.createContext({ document, Date, console, Number, String, Object, Map,
   $: selector => ids.get(selector.slice(1)),
   Option: function Option(text, value) { this.textContent = text; this.value = value; },
-  config: { relationships: [{ user_id: '10009', name: '测试创造者', address: '妈妈', relationship: '妈妈（创造者）', behavior: '喜欢文字学和可爱的东西。' }] },
+  config: { learning_groups: { '10002': { max_entry_chars: 40 } }, relationships: [{ user_id: '10009', name: '测试创造者', address: '妈妈', relationship: '妈妈（创造者）', behavior: '喜欢文字学和可爱的东西。' }] },
   memoryGroup: '', memoryOffset: 0, memoryRequest: 0,
   memberMemoryGroup: '', memberMemoryEntries: [], memberMemoryRequest: 0,
   memberFormRevision: 0, memberFormVersion: 0, memberVersionSequence: 0,
@@ -50,7 +50,7 @@ const context = vm.createContext({ document, Date, console, Number, String, Obje
   confirm: value => { confirms.push(value); return allow; },
   api: async (url, body) => { calls.push({ url, body }); return { entries: [], total: 0 }; }
 });
-for (const name of ['readMemory', 'memoryAction', 'emptyMemberMemory', 'memberFormValue', 'collectMemberDraft',
+for (const name of ['renderMemberLearningHint', 'readMemory', 'memoryAction', 'emptyMemberMemory', 'memberFormValue', 'collectMemberDraft',
   'showMemberFormState', 'fillMemberForm', 'markMemberDraft', 'renderMemberMemory', 'readMemberMemory',
   'renderMemberList', 'memberMemoryTime', 'renderMemberRelationChoices', 'importMemberRelationship',
   'editMemberMemory', 'newMemberMemory', 'saveMemberMemory', 'memberMemoryAction']) vm.runInContext(extract(name), context);
@@ -60,14 +60,17 @@ const row = (id, name = '群友', revision = 1) => ({ user_id: id, name, address
 async function main() {
   el('memory-state').value = el('member-state').value = 'all';
   context.memoryGroup = '10001'; context.renderMemberMemory(); await flush();
+  assert(el('member-learned-hint').textContent.includes('每条最多24字'));
   assert.equal(el('member-learn').checked, false, 'Member learning must default off');
   el('member-user').value = '10011'; el('member-name').value = '第一群草稿';
   el('member-learn').checked = true; context.markMemberDraft();
   context.memoryGroup = '10002'; context.renderMemberMemory(); await flush();
+  assert(el('member-learned-hint').textContent.includes('每条最多40字'), 'Member editor uses the current group character limit');
   assert.equal(el('member-user').value, '', 'A new group cannot inherit another group member');
   assert.equal(el('member-learn').checked, false);
   el('member-user').value = '10011'; el('member-name').value = '第二群草稿'; context.markMemberDraft();
   context.memoryGroup = '10001'; context.renderMemberMemory(); await flush();
+  assert(el('member-learned-hint').textContent.includes('每条最多24字'));
   assert.equal(el('member-name').value, '第一群草稿'); assert.equal(el('member-learn').checked, true);
   assert(context.memberFormDirty, 'Switching must preserve an unsaved member form');
   assert.equal(context.memberMemoryDrafts.get('10002').value.name, '第二群草稿');

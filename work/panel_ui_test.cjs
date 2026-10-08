@@ -34,6 +34,7 @@ class Element {
   get value() { return this._value; }
   append(...children) { for (const child of children) { if (typeof child !== 'string') child.parentElement = this; this.children.push(child); } }
   replaceChildren(...children) { this.children = []; this.append(...children); }
+  add(option) { this.append(option); }
   setAttribute(name, value) { this.attrs[name] = value; }
   addEventListener() {}
   focus() { this.focused = true; }
@@ -65,13 +66,19 @@ const document = {
 for (const match of html.matchAll(/<input type="checkbox" data-(runtime|model-control|moderation-intake)="([^"]+)"/g)) {
   const input = document.createElement('input'); input.type = 'checkbox'; input.dataset[camel(match[1])] = match[2];
 }
+for (const match of html.matchAll(/<input id="(memory-(?:tokens|records|active|entry-chars))"([^>]+)>/g)) {
+  const input = document.createElement('input'); input.id = match[1];
+  Object.assign(input, Object.fromEntries([...match[2].matchAll(/([\w-]+)="([^"]*)"/g)].map(attr => [attr[1], attr[2]])));
+  input.parentElement = { firstChild: { textContent: input.id } }; ids.set(input.id, input);
+}
 const requests = [], toasts = [];
 let entries = [];
 const context = vm.createContext({ document, console, Date, Math, Number, Object, Map, Set,
   $: selector => document.querySelector(selector),
   clone: value => JSON.parse(JSON.stringify(value)),
   toast: message => toasts.push(message), confirm: () => true,
-  collectSecurity() {}, collectLearningDraft() {}, collectPluginDraft() {},
+  collectSecurity() {}, collectPluginDraft() {}, renderMemberMemory() {}, readMemory: () => Promise.resolve(),
+  Option: function Option(text, value) { this.textContent = text; this.value = value; },
   api: async (url, body) => { if (body) { requests.push({ url, body }); return { message: '核验后仍需人工确认' }; } return { entries, total: entries.length }; },
   editingGroup: '10001', pluginGroup: '', memoryGroup: '', lastStatus: {}, deliveryOffset: 0,
   deliveryVerifications: new Map(), deliveryKey: (gid, row) => gid + ':' + row.id
@@ -80,7 +87,7 @@ for (const name of ['fields', 'extras', 'runtimeSchedulingDefaults', 'modelContr
   const declaration = script.match(new RegExp('^const ' + name + '=[^\\n]+', 'm'));
   assert(declaration, 'Missing declaration ' + name); vm.runInContext(declaration[0], context);
 }
-for (const name of ['makeFields', 'groupIds', 'ensureGroupConfig', 'runtimeDraft', 'collectRuntimeDraft', 'renderRuntimeDraft', 'renderModelControl', 'collectModelControl', 'renderModerationIntake', 'collectModerationIntake', 'collectLimits', 'collect', 'validateRuntimeTiming', 'validateNumericFields', 'healthCount', 'renderConversationProgress', 'renderLearningHealth', 'diagnosticInfo', 'learningError', 'deliveryReason', 'deliveryExpired', 'deliveryAction', 'readDeliveries']) vm.runInContext(extract(name), context);
+for (const name of ['makeFields', 'groupIds', 'ensureGroupConfig', 'learningDraft', 'renderMemberLearningHint', 'renderLearning', 'collectLearningDraft', 'runtimeDraft', 'collectRuntimeDraft', 'renderRuntimeDraft', 'renderModelControl', 'collectModelControl', 'renderModerationIntake', 'collectModerationIntake', 'collectLimits', 'collect', 'validateRuntimeTiming', 'validateNumericFields', 'healthCount', 'renderConversationProgress', 'renderLearningHealth', 'diagnosticInfo', 'learningError', 'deliveryReason', 'deliveryExpired', 'deliveryAction', 'readDeliveries']) vm.runInContext(extract(name), context);
 vm.runInContext("makeFields('#runtime-fields',fields,'runtime');makeFields('#extra-fields',extras,'runtime');makeFields('#collection-fields',collectionFields,'runtime');makeFields('#topic-partition-fields',topicPartitionFields,'runtime');makeFields('#retry-fields',retryFields,'runtime');makeFields('#model-control-fields',modelControlFields,'modelControl');makeFields('#model-input-fields',modelInputFields,'modelControl');makeFields('#model-reservoir-fields',modelReservoirFields,'modelControl');makeFields('#moderation-intake-fields',moderationIntakeFields,'moderationIntake');", context);
 context.config = {
   connection: { group_id: 10001, base_url: 'https://example.invalid', model: 'fake-model', disable_thinking: true },
@@ -102,7 +109,9 @@ assert.equal(context.config.moderation_intake.risk_screening, true);
 assert.equal(context.config.moderation_intake.audit_every, 50);
 assert.equal(context.config.moderation_intake.audit_interval, 180);
 assert.equal(context.config.moderation_intake.batch_limit, 12);
-context.renderRuntimeDraft(); context.renderModelControl(); context.renderModerationIntake();
+context.renderRuntimeDraft(); context.renderModelControl(); context.renderModerationIntake(); context.renderLearning();
+assert.equal(ids.get('memory-active').value, '200');
+assert.equal(ids.get('memory-entry-chars').value, '24');
 document.querySelector('[data-runtime="collect_quiet"]').value = 14;
 context.collectRuntimeDraft(); context.editingGroup = '10002'; context.renderRuntimeDraft();
 assert.equal(document.querySelector('[data-runtime="collect_quiet"]').value, '18');
@@ -131,6 +140,8 @@ assert.equal(payload.runtime_groups['10002'].collect_quiet, 18);
 assert.equal(payload.runtime_groups['10001'].delay_min, 3);
 assert(payload.plugin_groups['10002'].features.dice);
 assert(payload.learning_groups['10002'].enabled);
+assert.equal(payload.learning_groups['10001'].max_active, 200);
+assert.equal(payload.learning_groups['10001'].max_entry_chars, 24);
 assert(!('api_key' in payload));
 context.validateNumericFields();
 document.querySelector('[data-model-control="max_concurrent"]').value = '1.5';

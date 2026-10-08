@@ -445,7 +445,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/memory':
                 gid=self.learning_group(body.get('group_id',0))
                 if body.get('action')=='purge' and body.get('confirmed') is not True:raise ValueError('请确认彻底删除这条记忆')
-                memory_learning.Store(gid).update(body.get('id',''),body.get('action'),body.get('value'))
+                learning_policy=memory_learning.config(settings.load(),gid)
+                memory_learning.Store(gid).update(body.get('id',''),body.get('action'),body.get('value'),max_entry_chars=learning_policy.get('max_entry_chars',24))
                 if body.get('action') in ('edit','delete','purge'):member_memory.Store(gid).remove_source(body.get('id',''))
                 self.audit_target=str(gid)+':'+str(body.get('id',''))
                 return self.reply({'ok':True})
@@ -453,7 +454,8 @@ class Handler(BaseHTTPRequestHandler):
                 gid=self.learning_group(body.get('group_id',0));store=member_memory.Store(gid)
                 if body.get('action')=='save':
                     value=body.get('value')
-                    profile=store.upsert(value,create_only=isinstance(value,dict) and value.get('expected_revision') is None)
+                    learning_policy=memory_learning.config(settings.load(),gid)
+                    profile=store.upsert(value,create_only=isinstance(value,dict) and value.get('expected_revision') is None,max_entry_chars=learning_policy.get('max_entry_chars',24))
                     self.audit_target=str(gid)+':'+profile['user_id']
                     return self.reply({'ok':True,'profile':profile})
                 if body.get('action')=='purge' and body.get('confirmed') is not True:raise ValueError('请确认彻底删除这位群友的记忆')

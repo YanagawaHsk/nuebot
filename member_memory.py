@@ -69,21 +69,34 @@ def _field(value, limit, label):
     return value
 
 
-def _observation(value):
+def _entry_chars(value=24):
+    if type(value) is not int or not 1 <= value <= 240:
+        raise ValueError('学习条目字数上限需在1至240字之间')
+    return value
+
+
+def _observation(value, max_entry_chars=24):
     """Permanent notes have a stricter boundary than editable chat prompts."""
+    limit = _entry_chars(max_entry_chars)
     if not isinstance(value, str):
         raise ValueError('群友学习条目必须是文字')
     value = re.sub(r'\s+', ' ', ai_guard.normalized(value)).strip()
-    if not value or len(value) > 240:
+    if not value:
         return ''
     compact = re.sub(r'\s+', '', value)
     if (ai_guard.learning_reason(value) or ai_guard.output_reason(value)
             or PRIVATE.search(compact) or re.search(r'https?://|[\w.+-]+@[\w.-]+\.[A-Za-z]+|\b[0-9]{5,}\b', value)):
         return ''
+    # Check complete model/history text before truncating to the current group
+    # limit; the shared chat-input guard only scans the first 4,000 characters.
+    for text in ai_guard.variants(value):
+        candidate = re.sub(r'\s+', '', text)
+        if ai_guard.KEY.search(text) or any(pattern.search(candidate) for _, pattern in ai_guard.COMPILED):
+            return ''
     # Normalize using the same guard as group learning, even if optional UI
     # filters were disabled: persistent identity/permission changes are forbidden.
     clean = ai_guard.filter_learning({'summary': '公开表达观察', 'style_notes': [value], 'interests': [], 'cautions': []})
-    return clean['style_notes'][0] if clean['style_notes'] else ''
+    return clean['style_notes'][0][:limit] if clean['style_notes'] else ''
 
 
 def _safe_prompt_text(value):
@@ -175,7 +188,8 @@ class Store:
             rows = db.execute('SELECT * FROM profiles' + ('' if include_deleted else ' WHERE deleted=0') + ' ORDER BY created,user_id').fetchall()
         return [self._public(row) for row in rows]
 
-    def upsert(self, value, *, create_only=False):
+    def upsert(self, value, *, create_only=False, max_entry_chars=24):
+        limit = _entry_chars(max_entry_chars)
         if type(create_only) is not bool:raise ValueError('群友记忆创建方式不正确')
         if not isinstance(value, dict):
             raise ValueError('群友记忆必须是对象')
@@ -198,7 +212,9 @@ class Store:
                 raise ValueError('学习观察列表格式或数量不正确')
             edited = []
             for text in value['learned_notes']:
-                clean = _observation(text)
+                if isinstance(text, str) and len(re.sub(r'\s+', ' ', ai_guard.normalized(text)).strip()) > limit:
+                    raise ValueError('学习观察每条最多' + str(limit) + '字')
+                clean = _observation(text, limit)
                 if not clean:
                     raise ValueError('学习观察包含不适合长期保存的内容')
                 if clean not in edited:
@@ -245,7 +261,8 @@ class Store:
                        (json.dumps(data, ensure_ascii=False), revision, int(action == 'delete'), time.time(), uid))
             return self._public(db.execute('SELECT * FROM profiles WHERE user_id=?', (uid,)).fetchone())
 
-    def supplement(self, user_ids, security=None, max_chars=3500, references=None):
+    def supplement(self, user_ids, security=None, max_chars=3500, references=None, max_entry_chars=24):
+        limit = _entry_chars(max_entry_chars)
         if not isinstance(user_ids, (list, tuple, set)) or len(user_ids) > 2000:
             raise ValueError('当前群友列表不正确')
         if type(max_chars) is not int or not 0 <= max_chars <= 20000:
@@ -276,7 +293,7 @@ class Store:
                 safe = _safe_prompt_text(row[key])
                 if safe:
                     note[key] = safe
-            learned = [_observation(text) for text in row['learned_notes']]
+            learned = [_observation(text, limit) for text in row['learned_notes']]
             learned = [text for text in learned if text]
             if learned:
                 note['learned_observations'] = learned
@@ -320,7 +337,8 @@ class Store:
         public['tracked_members'] = list(allowed)
         return public, allowed
 
-    def apply_learning(self, value, allowed_map, source_id='', security=None):
+    def apply_learning(self, value, allowed_map, source_id='', security=None, max_entry_chars=24):
+        limit = _entry_chars(max_entry_chars)
         if not isinstance(value, dict) or not isinstance(allowed_map, dict) or len(allowed_map) > 21:
             raise ValueError('群友学习结果格式不正确')
         rows = value.get('member_notes', [])
@@ -331,7 +349,7 @@ class Store:
         for row in rows:
             if not isinstance(row, dict) or set(row) != {'member_ref', 'notes'} or not isinstance(row['member_ref'], str) or not isinstance(row['notes'], list) or len(row['notes']) > 6:
                 raise ValueError('群友学习条目格式不正确')
-            notes = [_observation(note) for note in row['notes']]
+            notes = [_observation(note, limit) for note in row['notes']]
             target = allowed_map.get(row['member_ref'])
             if target is None:
                 continue
