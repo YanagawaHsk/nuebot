@@ -144,6 +144,10 @@ from unittest.mock import patch
 sys.path.insert(0,os.getcwd())
 import bot,moderation_api,model_gate
 bot.reload_settings(force=True);bot.connected.set()
+# This fixture exercises the independent model/manual review branch. Literal
+# warnings have their own complete bot integration tests and are disabled here.
+bot.SETTINGS['moderation_keywords']['enabled']=False
+bot.moderation_pending.configure_keywords(bot.SETTINGS['moderation_keywords'])
 bot.moderator.policy.update(enabled=True,warnings_enabled=True,punishments_enabled=True,
  manual_enabled=True,protected_accounts=[bot.OWNER,bot.BOT])
 bot.chat_control.set_quiet(0,bot.GROUP)

@@ -77,7 +77,7 @@ const context = vm.createContext({ document, console, Date, Math, Number, Object
   $: selector => document.querySelector(selector),
   clone: value => JSON.parse(JSON.stringify(value)),
   toast: message => toasts.push(message), confirm: () => true,
-  collectSecurity() {}, collectPluginDraft() {}, renderMemberMemory() {}, readMemory: () => Promise.resolve(),
+  collectSecurity() {}, collectPluginDraft() {}, collectModerationKeywords() {}, renderMemberMemory() {}, readMemory: () => Promise.resolve(),
   Option: function Option(text, value) { this.textContent = text; this.value = value; },
   api: async (url, body) => { if (body) { requests.push({ url, body }); return { message: '核验后仍需人工确认' }; } return { entries, total: entries.length }; },
   editingGroup: '10001', pluginGroup: '', memoryGroup: '', savedLearningGroups: {}, lastStatus: {}, deliveryOffset: 0,

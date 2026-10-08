@@ -58,7 +58,7 @@ const context = vm.createContext({
   config: {connection: {group_id: 10001}, runtime: {}, groups: [{group_id: 10001}, {group_id: 10002}]},
   editingGroup: '', pluginGroup: '', memoryGroup: '', errorOffset: 0,
   validateRuntimeTiming() {},
-  collectRuntimeDraft() {}, collectLimits() {}, collectModelControl() {}, collectModerationIntake() {},
+  collectRuntimeDraft() {}, collectLimits() {}, collectModelControl() {}, collectModerationIntake() {}, collectModerationKeywords() {},
   collectSecurity() {}, collectLearningDraft() {}, collectPluginDraft() {},
   api: async url => {calls.push(url); return response;}
 });

@@ -8,6 +8,7 @@ FILES.insert(0,'moderation_control.py')
 FILES.insert(0,'http_body.py')
 FILES.insert(0,'moderation_api.py')
 FILES.insert(0,'moderation_review.py')
+FILES.insert(0,'moderation_keywords.py')
 
 def build(repository=None):
     version=json.loads((ROOT/'version.json').read_text(encoding='utf-8'))['version']

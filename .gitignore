@@ -43,3 +43,5 @@ model-diagnostics.json
 moderation-api.json
 moderation-api.json.tmp
 moderation-review/
+keyword-warning-state.json
+keyword-warning-state.tmp

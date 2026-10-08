@@ -36,7 +36,7 @@ const context=vm.createContext({document,console,Number,Object,Set,
   $:selector=>document.querySelector(selector),
   config:{connection:{group_id:10001},runtime:{},groups:[{group_id:10001},{group_id:10002}],moderation:{enabled:false,warnings_enabled:false,punishments_enabled:false,warnings_before_mute:2,warning_window_seconds:1800,individual_mute_seconds:600,minimum_confidence:.9}},
   editingGroup:'',pluginGroup:'',memoryGroup:'',validateRuntimeTiming(){},
-  collectRuntimeDraft(){},collectLimits(){},collectModelControl(){},collectModerationIntake(){},collectLogControl(){},collectSecurity(){},collectLearningDraft(){},collectPluginDraft(){}
+  collectRuntimeDraft(){},collectLimits(){},collectModelControl(){},collectModerationIntake(){},collectModerationKeywords(){},collectLogControl(){},collectSecurity(){},collectLearningDraft(){},collectPluginDraft(){}
 });
 for(const name of ['runtimeSchedulingDefaults','modelControlDefaults','moderationIntakeDefaults','mods','modReserves'])
   vm.runInContext(script.match(new RegExp('^const '+name+'=[^\\n]+','m'))[0],context);

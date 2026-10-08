@@ -75,7 +75,7 @@ const context = vm.createContext({
   dirty: false, savedRevision: '', savedRuntime: {}, savedRuntimeGroups: {}, savedLearningGroups: {}, lastStatus: { state: 'stopped' },
   toast: message => notices.push(message),
   collectPluginDraft() {}, collectMemberDraft() {}, collectLimits() {},
-  collectModerationIntake() {}, collectSecurity() {}, renderPlugins() {},
+  collectModerationIntake() {}, collectModerationKeywords() {}, collectSecurity() {}, renderPlugins() {},
   renderWorkspace() {}, renderMultiGroups() {}, renderStatus() {}, renderMemberMemory() {}, resetModerationReview() {},
   readMemory() { readGroups.push(context.memoryGroup); return Promise.resolve(); },
   async status() {},

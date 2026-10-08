@@ -5,6 +5,7 @@ import ai_guard
 import model_gate
 import moderation_intake
 import moderation_api
+import moderation_keywords
 import error_log
 from local_identity import BOT_ID,OWNER_ID,DEFAULT_GROUP
 from pathlib import Path
@@ -37,7 +38,7 @@ def validate_connection(value):
     return {'group_id':group,'base_url':url,'model':model,'disable_thinking':value['disable_thinking']}
 
 def defaults():
-    return {'moderation_api':moderation_api_public(),'log_control':dict(error_log.LOG_DEFAULT),'security':dict(ai_guard.DEFAULT),'version':1,'plugins':plugin_features.validate({}),'relationships':copy.deepcopy(DEFAULT_RELATIONSHIPS),'connection':connection_defaults(),'persona':(ROOT/'persona.txt').read_text(encoding='utf-8'),'runtime':copy.deepcopy(DEFAULT_RUNTIME),'moderation':json.loads((ROOT/'moderation.json').read_text(encoding='utf-8')),'keywords':[]}
+    return {'moderation_keywords':copy.deepcopy(moderation_keywords.DEFAULT),'moderation_api':moderation_api_public(),'log_control':dict(error_log.LOG_DEFAULT),'security':dict(ai_guard.DEFAULT),'version':1,'plugins':plugin_features.validate({}),'relationships':copy.deepcopy(DEFAULT_RELATIONSHIPS),'connection':connection_defaults(),'persona':(ROOT/'persona.txt').read_text(encoding='utf-8'),'runtime':copy.deepcopy(DEFAULT_RUNTIME),'moderation':json.loads((ROOT/'moderation.json').read_text(encoding='utf-8')),'keywords':[]}
 
 def validate_moderation(value,group_id):
     if not isinstance(value,dict):raise ValueError('天网设置格式不正确')
@@ -119,7 +120,7 @@ def validate(value):
     groups=validate_plugin_groups(value.get('plugin_groups'),value.get('plugins',{}),connection['group_id'])
     learning=memory_learning.validate_groups(value.get('learning_groups',{}))
     runtime_groups=validate_runtime_groups(value.get('runtime_groups',{}),runtime,{row['group_id'] for row in subscriptions}|set(groups)|set(learning)|{connection['group_id']})
-    return {'moderation_api':moderation_api.public(value.get('moderation_api',{})),'log_control':error_log.validate_log_control(value.get('log_control',{})),'moderation_intake':moderation_intake.validate(value.get('moderation_intake')),'model_control':model_gate.validate(value.get('model_control',{})),'runtime_groups':runtime_groups,'account_limits':validate_account_limits(value.get('account_limits'),runtime),'security':ai_guard.validate(value.get('security',{})),'version':2,'learning_groups':learning,'groups':subscriptions,'plugin_groups':groups,'plugins':groups.get(str(connection['group_id']),plugin_features.validate({})),'relationships':relationships,'connection':connection,'persona':persona,'runtime':{k:runtime[k] for k in DEFAULT_RUNTIME},'moderation':fixed,'keywords':clean}
+    return {'moderation_keywords':moderation_keywords.validate(value.get('moderation_keywords')),'moderation_api':moderation_api.public(value.get('moderation_api',{})),'log_control':error_log.validate_log_control(value.get('log_control',{})),'moderation_intake':moderation_intake.validate(value.get('moderation_intake')),'model_control':model_gate.validate(value.get('model_control',{})),'runtime_groups':runtime_groups,'account_limits':validate_account_limits(value.get('account_limits'),runtime),'security':ai_guard.validate(value.get('security',{})),'version':2,'learning_groups':learning,'groups':subscriptions,'plugin_groups':groups,'plugins':groups.get(str(connection['group_id']),plugin_features.validate({})),'relationships':relationships,'connection':connection,'persona':persona,'runtime':{k:runtime[k] for k in DEFAULT_RUNTIME},'moderation':fixed,'keywords':clean}
 
 def validate_subscriptions(rows,primary):
     if rows is None:rows=[{'group_id':primary,'enabled':True}]

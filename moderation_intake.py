@@ -1,8 +1,10 @@
-"""Local selection of text for model review; never a verdict or an action.
+"""Bounded local collection and selection; never sends or applies an action.
 
-The signals below only decide which messages deserve the model's attention.
+The risk signals below only decide which messages deserve the model's attention.
 Quotes, fiction, political debate and consensual teasing are still adjudicated
 by the existing model policy. No rule here can warn, mute, or change permissions.
+Explicitly configured literal rules can select a local warning for the worker to
+verify separately. They still run only after continuous raw collection finishes.
 Only the bounded collecting/pending queues retain text; dedup/history contain hashes and
 timestamps, and snapshot()/selection results contain no message contents.
 """
@@ -15,6 +17,8 @@ import re
 import threading
 import time
 import unicodedata
+
+import moderation_keywords
 
 
 DEFAULT = {
@@ -151,14 +155,16 @@ class ModerationIntake:
 
     ingest(item) collects bounded raw turns before selecting any model work.
     enqueue(item) is the legacy immediate selector, with intake_kind/intake_reasons.
-    take_batch() returns ready candidates first, then periodic ordinary samples.
+    take_batch() returns ready literal warnings, candidates, then ordinary samples.
     restore_batch(items, not_before=...) retries already selected work without
     screening it a second time. consider(item) screens without adding to a queue;
     do not call consider() and enqueue() for the same event.
     """
-    def __init__(self, group_id, config=None):
+    def __init__(self, group_id, config=None, keyword_config=None):
         self.group_id = str(group_id)
         self.config = validate(config)
+        self.keyword_config = moderation_keywords.validate(
+            keyword_config if keyword_config is not None else {'enabled': False})
         self._lock = threading.RLock()
         self._seen_ids = collections.OrderedDict()
         self._selected = collections.OrderedDict()
@@ -171,7 +177,8 @@ class ModerationIntake:
         self._last_audit = None
         self._counts = dict.fromkeys(
             ('received', 'candidates', 'audits', 'deduplicated', 'clean',
-             'empty', 'ignored_group', 'dropped', 'expired', 'batches', 'batched'), 0)
+             'empty', 'ignored_group', 'dropped', 'expired', 'batches', 'batched',
+             'keyword_hits'), 0)
 
     def configure(self, config=None):
         clean = validate(config)
@@ -182,6 +189,33 @@ class ModerationIntake:
             while self._collecting_messages() > clean['max_pool_messages']:
                 self._flush_turn(next(iter(self._collecting)), _clock(self._last_now))
         return dict(clean)
+
+    def configure_keywords(self, config=None):
+        """Update independent rules and remove stale warning decisions in queue.
+
+        A withdrawn rule leaves existing selected text for ordinary review. The
+        sender still has to recheck current rules and permissions before acting.
+        This method does not rescreen raw turns ahead of their collection window.
+        """
+        clean = moderation_keywords.validate(
+            config if config is not None else {'enabled': False})
+        with self._lock:
+            self.keyword_config = clean
+            for item, _ in self._queue:
+                self._refresh_keyword_item(item)
+        return copy.deepcopy(clean)
+
+    def _refresh_keyword_item(self, item):
+        if item.get('intake_kind') != 'keyword':
+            return
+        result = moderation_keywords.match(item, self.keyword_config)
+        if result['disposition'] == 'warn':
+            item['keyword_verdict'] = copy.deepcopy(result['verdict'])
+        else:
+            item.pop('keyword_verdict', None)
+            item['intake_kind'] = 'candidate'
+            item['intake_reasons'] = ['keyword_context_review' if
+                result['disposition'] == 'review' else 'keyword_rule_changed']
 
     def __len__(self):
         with self._lock:
@@ -198,7 +232,7 @@ class ModerationIntake:
         """
         ids=None if message_ids is None else {str(ident) for ident in message_ids if ident is not None}
         with self._lock:
-            if any((not candidates_only or row[0].get('intake_kind')=='candidate')
+            if any((not candidates_only or row[0].get('intake_kind') in ('keyword', 'candidate'))
                    and (ids is None or any(str(ident) in ids for ident in
                         row[0].get('source_message_ids', [row[0].get('message_id')])))
                    for row in self._queue):
@@ -230,7 +264,7 @@ class ModerationIntake:
 
     @staticmethod
     def _decision(kind, reasons=()):
-        return {'selected': kind in ('candidate', 'audit'), 'kind': kind,
+        return {'selected': kind in ('keyword', 'candidate', 'audit'), 'kind': kind,
                 'reasons': list(reasons)}
 
     def consider(self, item, now=None):
@@ -250,7 +284,10 @@ class ModerationIntake:
             if not normalized:
                 self._counts['empty'] += 1
                 return self._decision('empty')
-            return self._screen(item, normalized, now)
+            decision = self._screen(item, normalized, now)
+            # Public selection metadata must not expose evidence or rule text.
+            decision.pop('keyword_verdict', None)
+            return decision
 
     def _screen(self, item, normalized, now, *, collected=False):
         """Select a completed turn; raw collection never calls keyword rules."""
@@ -281,13 +318,27 @@ class ModerationIntake:
                 self._repeats[repeated_text] = repeats[-SPAM_REPEATS:]
                 spam_repeated = spam_repeated or len(repeats) >= SPAM_REPEATS
             self._prune(now)
-            fingerprint = _hash(scope, normalized, _target_key(item))
+            # Identical quoted text is a different screening context from a new
+            # original message. A quotation must not suppress a later clear hit.
+            fingerprint = _hash(scope, normalized, _target_key(item),
+                                *(item.get(field) is True for field in
+                                  ('quoted', 'forwarded', 'truncated')))
             if fingerprint in self._selected:
                 self._counts['deduplicated'] += 1
                 return self._decision('dedup', ('duplicate_text',))
 
             # Compact Chinese text also detects spacing/zero-width variants.
             matching.extend(text.replace(' ', '') for text in tuple(matching))
+            keyword = moderation_keywords.match(item, self.keyword_config)
+            if keyword['disposition'] in ('warn', 'review'):
+                self._selected[fingerprint] = now
+                self._prune(now)
+                self._counts['keyword_hits'] += 1
+                if keyword['disposition'] == 'warn':
+                    return {**self._decision('keyword', ('keyword_literal',)),
+                            'keyword_verdict': copy.deepcopy(keyword['verdict'])}
+                self._counts['candidates'] += 1
+                return self._decision('candidate', ('keyword_context_review',))
             reasons = []
             if self.config['risk_screening']:
                 for reason, pattern in (('threat_signal', _THREAT),
@@ -331,7 +382,15 @@ class ModerationIntake:
             if item['intake_kind'] == 'audit':
                 self._counts['dropped'] += 1
                 return False
-            self._queue.pop(audit if audit is not None else 0)
+            candidate = next((index for index, row in enumerate(self._queue)
+                              if row[0].get('intake_kind') == 'candidate'), None)
+            victim = audit if audit is not None else candidate
+            # A lower-priority model candidate must not displace a ready local
+            # warning merely because it is the oldest selected item.
+            if victim is None and item['intake_kind'] != 'keyword':
+                self._counts['dropped'] += 1
+                return False
+            self._queue.pop(victim if victim is not None else 0)
             self._counts['dropped'] += 1
         self._queue.append((copy.deepcopy(item), not_before))
         return True
@@ -347,12 +406,18 @@ class ModerationIntake:
         self._counts['expired'] += len(segments) - len(live)
         if not live:
             return
+        if (len(live) > self.config['max_segments'] or
+                sum(len(segment['text']) for segment in live)
+                + len(SEGMENT_SEPARATOR) * (len(live) - 1) > self.config['max_collect_chars']):
+            turn.setdefault('flags', {})['truncated'] = True
         # Runtime limits may have shrunk since these fragments were ingested.
         # Finish them as bounded chunks rather than emitting an oversized turn.
         chunk = []
         chars = 0
         for original in live:
             segment = {**original, 'text': original['text'][:self.config['max_collect_chars']]}
+            if len(original['text']) > self.config['max_collect_chars']:
+                turn.setdefault('flags', {})['truncated'] = True
             addition = len(segment['text']) + (len(SEGMENT_SEPARATOR) if chunk else 0)
             if chunk and (len(chunk) >= self.config['max_segments']
                           or chars + addition > self.config['max_collect_chars']):
@@ -376,6 +441,7 @@ class ModerationIntake:
             'received_at': max(segment['received_at'] for segment in live),
             'first_received_at': min(segment['received_at'] for segment in live),
         })
+        selected.update(turn.get('flags', {}))
         # Targets in an earlier fragment must survive the representative update.
         for field in ('target_user_ids', 'targets', 'mentions'):
             values = turn.get(field)
@@ -384,6 +450,8 @@ class ModerationIntake:
         decision = self._screen(selected, _normalize(selected['text']), now, collected=True)
         if decision['selected']:
             selected.update(intake_kind=decision['kind'], intake_reasons=list(decision['reasons']))
+            if decision.get('keyword_verdict'):
+                selected['keyword_verdict'] = copy.deepcopy(decision['keyword_verdict'])
             self._append(selected, now)
 
     def _expire_pending(self, now):
@@ -463,16 +531,22 @@ class ModerationIntake:
             representative = {field: item[field] for field in (
                 'group_id', 'user_id', 'message_id', 'source_id', 'topic', 'topic_id',
                 'partition', 'partition_id') if field in item and _safe_metadata(item[field])}
+            for field in ('quoted', 'forwarded', 'truncated'):
+                if item.get(field) is True:
+                    representative[field] = True
             key = _scope_key(representative)
             invalid_scope = any(field in item and not _safe_metadata(item[field]) for field in
                                 ('user_id', 'topic', 'topic_id', 'partition', 'partition_id'))
             if representative.get('user_id') in (None, '') or invalid_scope:
                 self._anonymous_turn += 1
                 key = _hash(key, self._anonymous_turn)
+            text_truncated = len(text) > self.config['max_collect_chars']
             text = text[:self.config['max_collect_chars']]
             segment = {'message_id': representative.get('message_id'),
                        'text': text, 'received_at': stamp,
                        'user_id': representative.get('user_id')}
+            if text_truncated:
+                representative['truncated'] = True
             existing = self._collecting.get(key)
             if existing:
                 new_chars = sum(len(part['text']) for part in existing['segments']) + len(text)
@@ -489,6 +563,9 @@ class ModerationIntake:
                                          'first_at': now, 'last_at': now}
             turn = self._collecting[key]
             turn['item'] = representative
+            for field in ('quoted', 'forwarded', 'truncated'):
+                if representative.get(field) is True:
+                    turn.setdefault('flags', {})[field] = True
             turn['segments'].append(segment)
             turn['last_at'] = now
             for field in ('target_user_ids', 'targets', 'mentions'):
@@ -512,6 +589,9 @@ class ModerationIntake:
                 selected = {**item, 'intake_kind': decision['kind'],
                             'intake_reasons': list(decision['reasons']),
                             'received_at': _received(item.get('received_at'), now)}
+                if decision['kind'] == 'keyword':
+                    result = moderation_keywords.match(selected, self.keyword_config)
+                    selected['keyword_verdict'] = copy.deepcopy(result['verdict'])
                 decision['queued'] = self._append(selected, now)
             return decision
 
@@ -525,7 +605,8 @@ class ModerationIntake:
                     raise ValueError('审核批次上限不正确')
                 count = min(count, limit)
             ready = [(index, row) for index, row in enumerate(self._queue) if row[1] <= now]
-            ready.sort(key=lambda pair: pair[1][0]['intake_kind'] != 'candidate')
+            priority = {'keyword': 0, 'candidate': 1, 'audit': 2}
+            ready.sort(key=lambda pair: priority.get(pair[1][0]['intake_kind'], 3))
             chosen = ready[:count]
             indexes = {index for index, _ in chosen}
             self._queue = [row for index, row in enumerate(self._queue) if index not in indexes]
@@ -543,7 +624,7 @@ class ModerationIntake:
                        for row in self._queue}
             restored = 0
             for item in items:
-                if not isinstance(item, dict) or item.get('intake_kind') not in ('candidate', 'audit'):
+                if not isinstance(item, dict) or item.get('intake_kind') not in ('keyword', 'candidate', 'audit'):
                     raise ValueError('只能恢复已筛选的审核消息')
                 if item.get('group_id') is not None and str(item['group_id']) != self.group_id:
                     raise ValueError('不能恢复其他群的审核消息')
@@ -552,6 +633,7 @@ class ModerationIntake:
                     continue
                 safe_item = {**item, 'received_at': _received(item.get('received_at'),
                                                               _clock(self._last_now))}
+                self._refresh_keyword_item(safe_item)
                 if self._append(safe_item, not_before):
                     present.add(key)
                     restored += 1
@@ -563,6 +645,7 @@ class ModerationIntake:
             return {**self._counts, 'pending': len(self._queue),
                     'collecting_messages': self._collecting_messages(),
                     'collecting_turns': len(self._collecting),
+                    'pending_keywords': sum(row[0]['intake_kind'] == 'keyword' for row in self._queue),
                     'pending_candidates': sum(row[0]['intake_kind'] == 'candidate' for row in self._queue),
                     'pending_audits': sum(row[0]['intake_kind'] == 'audit' for row in self._queue),
                     **self.config}

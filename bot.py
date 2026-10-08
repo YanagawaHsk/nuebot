@@ -3,6 +3,7 @@ import collections
 import base64
 from datetime import datetime
 import json
+import hashlib
 import logging
 import math
 import os
@@ -36,6 +37,7 @@ import moderation_intake
 import moderation_control
 import moderation_api
 import moderation_review
+import moderation_keywords
 import model_input
 import model_diagnostics
 import model_reservoir
@@ -73,6 +75,7 @@ MODEL_SERVICE=model_gate.service(MODEL["base_url"],MODEL["api_key"])
 context = collections.deque(maxlen=CONTEXT_MESSAGES)
 pending = collections.deque(maxlen=100)
 moderation_pending = moderation_intake.ModerationIntake(GROUP,SETTINGS.get('moderation_intake'))
+moderation_pending.configure_keywords(SETTINGS.get('moderation_keywords'))
 moderator = Moderator(state_path=ROOT/f'moderation-state-{GROUP}.json')
 plugin_engine=plugin_features.Engine(state_path=ROOT/'plugin-state.json')
 learning_windows=memory_learning.Windows(memory_learning.config(SETTINGS,GROUP))
@@ -147,6 +150,9 @@ def status(state, **fields):
     except Exception:value['token_reservoir']={}
     value['learning']={**learning_windows.snapshot(),**{k:memory_learning.config(SETTINGS,GROUP)[k] for k in ('enabled','auto_apply')}}
     value['moderation_intake']=moderation_pending.snapshot()
+    keyword_config=moderation_keywords.validate(SETTINGS.get('moderation_keywords'))
+    value['moderation_keywords']={key:keyword_config[key] for key in ('enabled','record_warning_count','user_cooldown_seconds')}
+    value['moderation_keywords'].update(active_rules=sum(rule['enabled'] for rule in keyword_config['rules']),pending_keywords=value['moderation_intake'].get('pending_keywords',0))
     try:value['moderation_review']=review_store.snapshot()
     except Exception:value['moderation_review']={}
     try:
@@ -184,6 +190,7 @@ def reload_settings(force=False):
             value['moderation']['group_id']=GROUP
             moderator.policy=value['moderation']
             moderation_pending.configure(value.get('moderation_intake'))
+            moderation_pending.configure_keywords(value.get('moderation_keywords'))
             if not moderator.policy['enabled']:moderation_pending.clear()
             PROMPT=value['persona']
             MAX_MESSAGES_HOUR=runtime['messages_hour'];MAX_MODEL_CALLS_HOUR=runtime['model_calls_hour']
@@ -445,7 +452,9 @@ def receive(event, history=False):
         last_human=max(last_human,stamp)
         if moderator.policy['enabled'] and uid not in moderator.policy['protected_accounts'] and any(p.get('type')=='text' for p in event.get('message',[])):
             moderation_pending.ingest({'user_id':uid,'message_id':ident,'text':text,'received_at':stamp,
-                'group_id':GROUP,'topic':topic_id,'partition':partition})
+                'group_id':GROUP,'topic':topic_id,'partition':partition,
+                'quoted':any(p.get('type')=='reply' for p in event.get('message',[])),
+                'forwarded':any(p.get('type') in ('forward','node') for p in event.get('message',[]))})
         if blocked:
             security_counts.hit('input');record('security_input_blocked',reason=blocked)
             if rejection and not paused:
@@ -685,6 +694,11 @@ def _dispatch(segments,summary,kind,delivery_id=None):
     global last_send
     reload_settings()
     meta=getattr(reply_local,'meta',None)
+    if kind=='warning' and meta and meta.get('keyword_warning'):
+        # Recheck after hot-reload, immediately before the real send. A removed
+        # rule or disabled warning must not survive in an already prepared task.
+        if not keyword_warning_allowed(meta.get('keyword_user_id'),meta.get('keyword_category')) or meta.get('keyword_revision')!=keyword_revision():
+            delivery_queue.mark(GROUP,delivery_id,'unsent','KeywordSettingsChanged');return False
     # Manual resend may override topic drift, but cannot bring erased memories back.
     if meta and kind in ('text','sticker') and not memory_current(meta,legacy=True):
         delivery_queue.mark(GROUP,delivery_id,'expired','MemoryChanged');record('stale_reply_discarded',code='MemoryChanged');return False
@@ -1122,6 +1136,100 @@ def review_case(item,window=None,verdict=None,code='ManualReview',reason='请人
 def finish_review(case,state,result):
     return review_store.finish(case['id'],state,result,claim_token=case['claim_token'])
 
+def keyword_revision():
+    config=moderation_keywords.validate(SETTINGS.get('moderation_keywords'))
+    return hashlib.sha256(json.dumps(config,sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()
+
+def keyword_warning_allowed(uid=None,category=None):
+    return (not HALT.exists() and connected.is_set() and not runner_done.is_set()
+            and moderator.policy['enabled'] and moderator.policy['warnings_enabled']
+            and SETTINGS.get('moderation_keywords',moderation_keywords.DEFAULT)['enabled']
+            and (uid is None or type(uid) is int and uid not in {*moderator.policy['protected_accounts'],OWNER,BOT})
+            and (category is None or category in moderator.policy['allowed_categories'])
+            and any(g['group_id']==GROUP and g['enabled'] for g in SETTINGS['groups']))
+
+def keyword_warning_state(now=None):
+    """A bounded per-group cooldown survives restart; corrupt state fails closed."""
+    now=time.time() if now is None else now
+    path=ROOT/'keyword-warning-state.json'
+    try:
+        if path.stat().st_size>200000:raise ValueError('KeywordCooldownStateInvalid')
+        data=json.loads(path.read_text(encoding='utf-8'))
+    except FileNotFoundError:return {}
+    except (ValueError,OSError) as exc:raise ValueError('KeywordCooldownStateInvalid') from exc
+    if not isinstance(data,dict) or len(data)>2000:raise ValueError('KeywordCooldownStateInvalid')
+    if any(not isinstance(uid,str) or not uid.isdecimal() or len(uid)>20
+           or type(stamp) not in (int,float) or not math.isfinite(stamp) or stamp<0
+           for uid,stamp in data.items()):raise ValueError('KeywordCooldownStateInvalid')
+    return {uid:stamp for uid,stamp in data.items() if stamp>now-3600}
+
+def remember_keyword_warning(uid,now=None):
+    now=time.time() if now is None else now
+    state=keyword_warning_state(now)
+    state[str(uid)]=now
+    if len(state)>2000:raise ValueError('KeywordCooldownCapacity')
+    write_keyword_warning_state(state)
+
+def write_keyword_warning_state(state):
+    path=ROOT/'keyword-warning-state.json';tmp=path.with_suffix('.tmp')
+    tmp.write_text(json.dumps(state),encoding='utf-8');shared_budget.replace_with_retry(tmp,path)
+
+def process_keyword_moderation(item):
+    """Literal rules can warn, never call the punishment planner or a model."""
+    case=claimed=None;sent=attempted=False
+    try:
+        revision=keyword_revision()
+        config=moderation_keywords.validate(SETTINGS.get('moderation_keywords'))
+        if revision!=keyword_revision():return False
+        matched=moderation_keywords.match(item,config)
+        if matched['disposition']!='warn':
+            review_case(item,code='KeywordContextReview',reason='关键词规则已变化或语境不明确，请人工复核');return False
+        verdict=matched['verdict']
+        case=review_case(item,verdict=verdict,code='KeywordWarning',reason='已保存的明确关键词命中，仅执行文字提醒')
+        def close(reason):
+            if case['state']=='pending' and not case.get('requested_action'):
+                review_store.resolve(case['id'],reason,expected_revision=case['revision'])
+            return False
+        uid=item.get('user_id');sources=moderation_sources(item)
+        if (item.get('group_id',GROUP)!=GROUP or type(uid) is not int or uid<=0 or not sources or any(source.get('message_id') is None or str(source.get('user_id'))!=str(uid) for source in sources)):
+            return close('来源或真实身份不完整，未自动发送')
+        expires=min(source['received_at'] for source in sources)+120
+        if uid in {*moderator.policy['protected_accounts'],OWNER,BOT}:return close('保护成员不执行关键词警告')
+        if verdict['category'] not in moderator.policy['allowed_categories']:return close('此类别不在当前群规范围内')
+        with moderation_action_lock:
+            if not keyword_warning_allowed(uid,verdict['category']) or revision!=keyword_revision() or time.time()>=expires:return close('警告开关关闭、规则变化或原文已过期，未发送')
+            state=keyword_warning_state()
+            if time.time()-state.get(str(uid),0)<config['user_cooldown_seconds']:return close('同一成员处于关键词提醒冷却期，未重复发送')
+            if str(uid) not in state and len(state)>=2000:return close('关键词冷却记录已满，未发送')
+            member=verified_moderation_member(uid);verified_moderation_member(BOT)
+            if member.get('role')!='member':return close('群主、管理员或未知身份不执行关键词警告')
+            if not keyword_warning_allowed(uid,verdict['category']) or revision!=keyword_revision() or time.time()>=expires:return close('设置或连接已变化，未发送')
+            claimed=review_store.claim_case(case['id'],expected_revision=case['revision'])
+            if not claimed:return False
+            # Reserve before the network call. A crash between QQ confirmation
+            # and settlement must not lose cooldown for another source event.
+            remember_keyword_warning(uid)
+            phrase=moderation_api.redact(verdict['warning_text'],review_store.secrets)
+            reply_local.meta={'manual':True,'expires':min(expires,time.time()+30),'keyword_warning':True,'keyword_revision':revision,'keyword_user_id':uid,'keyword_category':verdict['category']}
+            try:
+                attempted=True
+                sent=dispatch([{'type':'at','data':{'qq':str(uid)}},{'type':'text','data':{'text':' '+phrase}}],'@群友 '+phrase,'warning')
+            finally:reply_local.meta=None
+            if sent:
+                remember_keyword_warning(uid)
+                if config['record_warning_count']:moderator.record_confirmed_warning(uid,item['message_id'])
+                finish_review(claimed,'resolved','关键词警告发送已确认'+('，已计入警告次数' if config['record_warning_count'] else '，不计入禁言警告次数'))
+            else:
+                if not HALT.exists():write_keyword_warning_state(state)
+                finish_review(claimed,'unknown' if HALT.exists() else 'pending','结果未知，请核对 QQ' if HALT.exists() else '未发送，可在有效时间内人工处理')
+        record('moderation_keyword_warning',rule_id=verdict['rule_id'],confirmed=sent,counted=bool(sent and config['record_warning_count']));return sent
+    except Exception as exc:
+        if claimed:
+            if attempted:HALT.write_text('Keyword delivery or confirmed bookkeeping requires inspection; do not resend',encoding='utf-8')
+            try:finish_review(claimed,'unknown' if attempted or HALT.exists() else 'pending','关键词执行结果需核对' if attempted or HALT.exists() else '关键词核验失败，未发送')
+            except Exception:HALT.write_text('Keyword warning ledger requires inspection',encoding='utf-8')
+        record('moderation_keyword_error',**error_log.fields(exc));return False
+
 def process_review_actions():
     # The HTTP panel only queues intent. This verified group worker owns QQ effects.
     if HALT.exists() or not connected.is_set() or runner_done.is_set():return False
@@ -1175,15 +1283,21 @@ def process_moderation():
         if items:moderation_busy.set()
     if not items:return False
     last_moderation_check=time.time();acted=False
+    eligible=[]
     try:
-        eligible=[]
         for item in items:
-            if time.time()-item.get('first_received_at',item['received_at'])>=120:
+            if item.get('intake_kind')=='keyword':
+                acted=process_keyword_moderation(item) or acted
+            elif time.time()-item.get('first_received_at',item['received_at'])>=120:
                 review_case(item,code='ModerationExpired',reason='连续发言已超过警告时限，仅供人工查看')
+            elif any(item.get(flag) is True for flag in ('quoted','forwarded','truncated','text_truncated','keyword_context_truncated')):
+                # Rendered text alone cannot reproduce hidden quotation/forward
+                # metadata or omitted suffixes for an external classifier.
+                review_case(item,code='ModerationContextReview',reason='原始消息含引用、转发或截断标记，请人工结合 QQ 原文复核')
             elif len(moderation_sources(item))>audit['context_messages']:
                 review_case(item,code='ModerationContextInsufficient',reason='审核上下文上限不足以容纳完整连续发言，请人工复核')
             else:eligible.append(item)
-        if not eligible:return False
+        if not eligible:return acted
         verdicts,window=classify_moderation(eligible)
         for verdict in verdicts:
             item=next((row for row in eligible if row['message_id']==window[verdict['index']]['id']),None)
@@ -1207,15 +1321,15 @@ def process_moderation():
             service=model_gate.service(configured['base_url'],configured.get('api_key',''))
             ready=model_gate.next_ready(service,SETTINGS['model_control'])['retry_at']
             if str(exc)=='Hourly model budget exhausted':ready=max(ready,time.time()+shared_budget.next_available('model',GROUP,MAX_MODEL_CALLS_HOUR,account_limit('model_calls_hour')))
-            kept=[item for item in items if max(time.time()+2,ready)<item.get('first_received_at',item['received_at'])+120]
+            kept=[item for item in eligible if max(time.time()+2,ready)<item.get('first_received_at',item['received_at'])+120]
             if kept:moderation_pending.restore_batch(kept,not_before=max(time.time()+2,ready));retry=True
-            for item in items:
+            for item in eligible:
                 if item not in kept:review_case(item,code='ModerationBudgetWait',reason='审核预算等待将超过时限，请人工复核')
         else:
             code='ModerationNotConfigured' if isinstance(exc,AuditUnavailable) else 'ModerationUnverified'
             reason='专用审核接口尚未配置，请人工复核' if isinstance(exc,AuditUnavailable) else '专用审核未完成或结果无法验证，请人工复核'
-            for item in items:review_case(item,code=code,reason=reason)
-        record('moderation_wait' if retry else 'moderation_review_pending',code='ModerationNotConfigured' if isinstance(exc,AuditUnavailable) else 'ModerationUnverified',count=len(items))
+            for item in eligible:review_case(item,code=code,reason=reason)
+        record('moderation_wait' if retry else 'moderation_review_pending',code='ModerationNotConfigured' if isinstance(exc,AuditUnavailable) else 'ModerationUnverified',count=len(eligible))
     finally:moderation_busy.clear()
     return acted
 
