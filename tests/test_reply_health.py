@@ -2,6 +2,7 @@
 import io
 from contextlib import closing
 import json
+import shutil
 from pathlib import Path
 import sqlite3
 import sys
@@ -190,8 +191,18 @@ class ReplyHealthHttpTests(unittest.TestCase):
     restore_imports = classmethod(reliability.ReliabilityHttpTests.restore_imports.__func__)
     setUp = reliability.ReliabilityHttpTests.setUp
     stop_http = reliability.ReliabilityHttpTests.stop_http
-    request = reliability.ReliabilityHttpTests.request
     admin_request = reliability.ReliabilityHttpTests.admin_request
+
+    def request(self, path, body=None, **kwargs):
+        # A model probe uses the real saved shared gate before mock HTTP opens.
+        # Its allowed queue + request wait exceeds the ordinary 5-second HTTP
+        # fixture timeout, especially while Windows CI is busy with SQLite IO.
+        # Wait for the handler to finish rather than restoring its ROOT patches
+        # and deleting temporary databases while it is still serving a request.
+        if path == '/api/test-model' and body is not None:
+            policy = self.s.settings.load()['model_control']
+            kwargs.setdefault('timeout', policy['queue_timeout'] + min(10, policy['request_timeout']) + 10)
+        return reliability.ReliabilityHttpTests.request(self, path, body, **kwargs)
 
     def test_health_endpoint_auth_group_window_and_privacy(self):
         group = 100000003
@@ -230,7 +241,7 @@ class ReplyHealthHttpTests(unittest.TestCase):
             with self.s.model_gate.db() as conn:
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM tickets WHERE started>0').fetchone()[0], 1)
             return Response(b'{"choices":[{"message":{"content":"private provider content"}}]}')
-        with patch.object(self.s, 'MODEL_TEST_NEXT', 0), patch.object(self.s.model_gate, 'ROOT', self.root), patch.object(self.s.opener, 'open', side_effect=open_request), patch.object(self.s.model_gate, 'start_request', wraps=self.s.model_gate.start_request) as start:
+        with patch.object(self.s, 'MODEL_TEST_NEXT', 0), patch.object(self.s.model_gate, 'ROOT', self.root), patch.object(self.s.model_reservoir, 'ROOT', self.root), patch.object(self.s.opener, 'open', side_effect=open_request), patch.object(self.s.model_gate, 'start_request', wraps=self.s.model_gate.start_request) as start:
             status, value, _ = self.admin_request('/api/test-model', body)
             self.assertEqual(status, 200)
             self.assertTrue(value['synthetic'])
@@ -244,6 +255,8 @@ class ReplyHealthHttpTests(unittest.TestCase):
             self.s.MODEL_TEST_NEXT = 0
             self.assertEqual(self.admin_request('/api/test-model', body)[0], 400)
             self.assertEqual(len(sent), 1)
+            with self.s.model_gate.db() as conn:
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM tickets').fetchone()[0], 0)
         diagnostic = self.s.error_log.model_probe()
         self.assertTrue(diagnostic['latest']['ok'])
         self.assertNotIn('fake-test-key', json.dumps(diagnostic))
@@ -251,7 +264,7 @@ class ReplyHealthHttpTests(unittest.TestCase):
     def test_probe_429_metadata_is_safe_and_later_success_replaces_current_failure(self):
         body = self.probe_config()
         exc = urllib.error.HTTPError('https://private.invalid/token', 429, 'private body', {}, None)
-        with patch.object(self.s, 'MODEL_TEST_NEXT', 0), patch.object(self.s.model_gate, 'ROOT', self.root), patch.object(self.s.opener, 'open', side_effect=exc):
+        with patch.object(self.s, 'MODEL_TEST_NEXT', 0), patch.object(self.s.model_gate, 'ROOT', self.root), patch.object(self.s.model_reservoir, 'ROOT', self.root), patch.object(self.s.opener, 'open', side_effect=exc):
             status, value, _ = self.admin_request('/api/test-model', body)
         self.assertEqual(status, 400)
         self.assertIn('不能判定余额不足', value['error'])
@@ -271,7 +284,7 @@ class ReplyHealthHttpTests(unittest.TestCase):
         class Response(io.BytesIO):
             def geturl(inner):
                 return body['settings']['connection']['base_url'] + '/chat/completions'
-        with patch.object(self.s, 'MODEL_TEST_NEXT', 0), patch.object(self.s.model_gate, 'ROOT', self.root), patch.object(self.s.opener, 'open', return_value=Response(b'{"choices":[{"message":{"content":"OK"}}]}')):
+        with patch.object(self.s, 'MODEL_TEST_NEXT', 0), patch.object(self.s.model_gate, 'ROOT', self.root), patch.object(self.s.model_reservoir, 'ROOT', self.root), patch.object(self.s.opener, 'open', return_value=Response(b'{"choices":[{"message":{"content":"OK"}}]}')):
             self.assertEqual(self.admin_request('/api/test-model', body)[0], 200)
         diagnostic = self.s.error_log.model_probe()
         self.assertTrue(diagnostic['latest']['ok'])
@@ -279,12 +292,16 @@ class ReplyHealthHttpTests(unittest.TestCase):
 
     def test_saved_thinking_change_invalidates_probe_without_rewriting_model(self):
         body = self.probe_config()
+        # Keep saved-model revision and diagnostics in this case's directory;
+        # leaving a probe in the class application folder throttles later cases.
+        shutil.copy2(self.s.ROOT / 'model.json', self.root / 'model.json')
         class Response(io.BytesIO):
             def geturl(inner):
                 return body['settings']['connection']['base_url'] + '/chat/completions'
-        with patch.object(self.s.error_log, 'ROOT', self.s.ROOT), \
+        with patch.object(self.s, 'ROOT', self.root), \
                 patch.object(self.s, 'MODEL_TEST_NEXT', 0), \
                 patch.object(self.s.model_gate, 'ROOT', self.root), \
+                patch.object(self.s.model_reservoir, 'ROOT', self.root), \
                 patch.object(self.s.opener, 'open', return_value=Response(b'{"choices":[{"message":{"content":"OK"}}]}')), \
                 patch.object(self.s, 'active', return_value=False):
             self.assertEqual(self.admin_request('/api/test-model', body)[0], 200)

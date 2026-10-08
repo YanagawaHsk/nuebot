@@ -9,7 +9,7 @@ import threading
 import time
 import unittest
 import urllib.error
-from contextlib import closing
+from contextlib import closing, contextmanager
 from email.utils import formatdate
 from pathlib import Path
 from unittest.mock import patch
@@ -229,6 +229,44 @@ class GateTests(unittest.TestCase):
             time.sleep(.01)
         self.fail('Scheduler condition did not become true')
 
+    @contextmanager
+    def admission_times(self, actual=False):
+        """Observe committed gate slots, before commit/notice/thread delays.
+
+        Sampling after acquire()/start_request() returns can compress apparent
+        spacing when an earlier caller is delayed by SQLite commits or thread
+        scheduling. The transaction's admission timestamp tests the shared gate
+        itself, while the jobs still exercise the real leases and SQLite locks.
+        """
+        starts = []
+        original_connect = sqlite3.connect
+        prefix = 'UPDATE gates SET actual_next=' if actual else 'UPDATE tickets SET started='
+        class ObservedConnection(sqlite3.Connection):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.admissions = []
+
+            def execute(self, sql, parameters=()):
+                cursor = super().execute(sql, parameters)
+                if sql.startswith(prefix) and cursor.rowcount == 1:
+                    # Capture the actual `now` used when admitting a request,
+                    # not next_start/actual_next's future reservation value.
+                    self.admissions.append(parameters[2] if actual else parameters[0])
+                return cursor
+
+            def __exit__(self, kind, value, traceback):
+                result = super().__exit__(kind, value, traceback)
+                if kind is None:
+                    starts.extend(self.admissions)
+                self.admissions.clear()
+                return result
+
+        def connect(*args, **kwargs):
+            return original_connect(*args, **{**kwargs, 'factory': ObservedConnection})
+
+        with patch.object(model_gate.sqlite3, 'connect', side_effect=connect):
+            yield starts
+
     def block(self):
         with model_gate.db() as conn:
             conn.execute('INSERT OR REPLACE INTO gates(service,next_start,blocked_until,failures,last_group) VALUES(?,0,?,0,0)', (self.key, time.time() + 300))
@@ -302,16 +340,16 @@ class GateTests(unittest.TestCase):
         self.assertEqual(model_gate.snapshot(self.key)['waiting'], 0)
 
     def test_min_interval_applies_after_fast_success_and_failure(self):
-        starts = []
         policy = {**self.policy, 'min_interval': .09}
-        for index in range(3):
-            try:
-                with model_gate.acquire(self.key, 10 + index, 'chat', policy):
-                    starts.append(time.monotonic())
-                    if index == 1:
-                        raise ValueError('request did not reach provider')
-            except ValueError:
-                pass
+        with self.admission_times() as starts:
+            for index in range(3):
+                try:
+                    with model_gate.acquire(self.key, 10 + index, 'chat', policy):
+                        if index == 1:
+                            raise ValueError('request did not reach provider')
+                except ValueError:
+                    pass
+        starts.sort()
         self.assertEqual(len(starts), 3)
         self.assertTrue(all(after - before >= .085 for before, after in zip(starts, starts[1:])))
         self.assertEqual(model_gate.snapshot(self.key)['active'], 0)
@@ -391,25 +429,24 @@ class GateTests(unittest.TestCase):
         policy = {**self.policy, 'max_concurrent': 2, 'min_interval': .08}
         release = threading.Event()
         leased = {10: threading.Event(), 20: threading.Event()}
-        starts = []
         def job(group):
             with model_gate.acquire(self.key, group, 'chat', policy):
                 leased[group].set()
                 if not release.wait(30):
                     raise TimeoutError('test coordinator did not release budget wait')
                 model_gate.start_request(self.key, policy)
-                starts.append(time.monotonic())
                 time.sleep(.01)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(job, group) for group in leased]
-            try:
-                self.assertTrue(all(event.wait(30) for event in leased.values()))
-                time.sleep(.1)
-                self.assertEqual(model_gate.snapshot(self.key)['active'], 2)
-            finally:
-                release.set()
-            for future in futures:
-                future.result(timeout=60)
+        with self.admission_times(actual=True) as starts:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(job, group) for group in leased]
+                try:
+                    self.assertTrue(all(event.wait(30) for event in leased.values()))
+                    time.sleep(.1)
+                    self.assertEqual(model_gate.snapshot(self.key)['active'], 2)
+                finally:
+                    release.set()
+                for future in futures:
+                    future.result(timeout=60)
         starts.sort()
         self.assertEqual(len(starts), 2)
         self.assertGreaterEqual(starts[1] - starts[0], .075)

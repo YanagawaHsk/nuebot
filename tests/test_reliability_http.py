@@ -94,13 +94,13 @@ class ReliabilityHttpTests(unittest.TestCase):
         self.http.server_close()
         self.thread.join(timeout=2)
 
-    def request(self, path, body=None, cookie='', csrf='', origin=None, host=None):
+    def request(self, path, body=None, cookie='', csrf='', origin=None, host=None, timeout=5):
         headers = {'X-Panel-Token': csrf, 'Origin': self.s.ORIGIN if origin is None else origin, 'Content-Type': 'application/json'}
         if cookie:
             headers['Cookie'] = cookie
         if host is not None:
             headers['Host'] = host
-        client = http.client.HTTPConnection('127.0.0.1', self.s.PORT, timeout=5)
+        client = http.client.HTTPConnection('127.0.0.1', self.s.PORT, timeout=timeout)
         try:
             client.request('GET' if body is None else 'POST', path, None if body is None else json.dumps(body), headers)
             response = client.getresponse()
