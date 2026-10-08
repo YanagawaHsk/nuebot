@@ -53,6 +53,8 @@ const document = {
   querySelector: selector => {
     if (selector === '#nav button[data-tab="snowluma-tab"]') return snowButton;
     if (selector === '#nav button[data-tab="skynet-tab"]') return skynetButton;
+    const intake=selector.match(/^\[data-moderation-intake="([^"]+)"\]$/)?.[1];
+    if(intake)return controls.find(el=>el.dataset.moderationIntake===intake);
     return ids.get(selector.slice(1));
   },
   querySelectorAll: selector => {
@@ -63,6 +65,7 @@ const document = {
 };
 const checkbox = document.createElement('input');
 checkbox.type = 'checkbox'; checkbox.dataset.moderationIntake = 'risk_screening';
+const collectCheckbox=document.createElement('input');collectCheckbox.type='checkbox';collectCheckbox.dataset.moderationIntake='collect_enabled';
 ids.get('error-category').value = 'all';
 let response = { total: 0, entries: [] };
 const requests = [];
@@ -72,15 +75,16 @@ const context = vm.createContext({
   config: { connection: { group_id: 10001 }, runtime: {}, groups: [{ group_id: 10001 }, { group_id: 10002 }] },
   editingGroup: '', pluginGroup: '', memoryGroup: '', lastStatus: { groups: [] },
   errorOffset: 0, panelSessionRole: null, window: { location: { hash: '#snowluma-tab' } },
+  moderationApiSaved:null,
   validateRuntimeTiming: () => {},
   api: async url => { requests.push(url); return response; }
 });
-for (const name of ['runtimeSchedulingDefaults', 'modelControlDefaults', 'moderationIntakeDefaults', 'moderationIntakeFields']) {
+for (const name of ['runtimeSchedulingDefaults', 'modelControlDefaults', 'moderationIntakeDefaults', 'moderationIntakeFields','moderationCollectionFields']) {
   vm.runInContext(script.match(new RegExp('^const ' + name + '=[^\n]+', 'm'))[0], context);
 }
 for (const name of ['makeFields', 'groupIds', 'ensureGroupConfig', 'renderModerationIntake', 'collectModerationIntake',
                     'validateNumericFields', 'diagnosticInfo', 'healthCount', 'healthTime', 'healthReason',
-                    'diagnosticEntryInfo', 'diagnosticEntryDetails', 'renderModerationIntakeStatus',
+                    'diagnosticEntryInfo', 'diagnosticEntryDetails', 'renderModerationIntakeStatus','renderModerationCollectionStatus','renderModerationApiStatus',
                     'renderConversationProgress', 'applySnowDeepLink', 'readErrors']) {
   vm.runInContext(extract(name), context);
 }
@@ -89,8 +93,10 @@ assert.notEqual(context.healthTime('2026-10-08 09:20:01,971'), '时间未记录'
 assert.equal(context.healthTime('PRIVATE_RAW_TEXT'), '时间未记录');
 const text = id => ids.get(id).textContent;
 context.makeFields('#moderation-intake-fields', vm.runInContext('moderationIntakeFields', context), 'moderationIntake');
+context.makeFields('#moderation-collection-fields',vm.runInContext('moderationCollectionFields',context),'moderationIntake');
 context.ensureGroupConfig();
-assert.deepEqual(plain(context.config.moderation_intake), { risk_screening: true, audit_every: 50, audit_interval: 120, batch_limit: 12 });
+const collectionDefaults={collect_enabled:true,collect_quiet:12,collect_max:45,max_segments:6,max_pool_messages:100,max_collect_chars:4000,message_ttl:120};
+assert.deepEqual(plain(context.config.moderation_intake), { ...collectionDefaults,risk_screening: true, audit_every: 50, audit_interval: 120, batch_limit: 12 });
 context.renderModerationIntake();
 const input = key => controls.find(el => el.dataset.moderationIntake === key);
 assert.equal(input('risk_screening').checked, true);
@@ -101,10 +107,10 @@ input('risk_screening').checked = false;
 input('audit_every').value = '0'; input('audit_interval').value = '3600'; input('batch_limit').value = '20';
 context.collectModerationIntake();
 context.editingGroup = '10002'; context.ensureGroupConfig(); context.renderModerationIntake();
-assert.deepEqual(plain(context.config.moderation_intake), { risk_screening: false, audit_every: 0, audit_interval: 3600, batch_limit: 20 });
+assert.deepEqual(plain(context.config.moderation_intake), { ...collectionDefaults,risk_screening: false, audit_every: 0, audit_interval: 3600, batch_limit: 20 });
 assert.equal(input('risk_screening').checked, false, 'Group switching must preserve the global unsaved draft');
 context.validateNumericFields();
-for (const [key, values] of [['audit_every', ['', '-1', '10001', '2.5', 'Infinity']], ['audit_interval', ['-1', '3601', '1.5']], ['batch_limit', ['0', '21', '1.5']]]) {
+for (const [key, values] of [['audit_every', ['', '-1', '10001', '2.5', 'Infinity']], ['audit_interval', ['-1', '3601', '1.5']], ['batch_limit', ['0', '21', '1.5']],['collect_quiet',['-1','121']],['collect_max',['0','301']],['max_segments',['0','21']],['max_pool_messages',['0','1001']],['max_collect_chars',['63','32001']],['message_ttl',['0','3601']]]) {
   const el = input(key), saved = el.value;
   for (const value of values) {
     el.value = value;
@@ -113,6 +119,7 @@ for (const [key, values] of [['audit_every', ['', '-1', '10001', '2.5', 'Infinit
   }
   el.value = saved;
 }
+input('collect_quiet').value='46';assert.throws(()=>context.validateNumericFields(),/最长收集/);input('collect_quiet').value='12';input('message_ttl').value='44';assert.throws(()=>context.validateNumericFields(),/有效期/);input('message_ttl').value='120';
 assert(extract('render').includes('renderModerationIntake()'));
 assert(extract('collect').includes('collectModerationIntake()'));
 assert(script.includes("'[data-runtime],[data-model-control],[data-moderation-intake]"));

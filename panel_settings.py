@@ -4,6 +4,7 @@ import memory_learning
 import ai_guard
 import model_gate
 import moderation_intake
+import moderation_api
 import error_log
 from local_identity import BOT_ID,OWNER_ID,DEFAULT_GROUP
 from pathlib import Path
@@ -14,6 +15,12 @@ RANGES={'collect_quiet': (5, 60), 'collect_incomplete': (5, 90), 'collect_max': 
 DEFAULT_RUNTIME={'collect_quiet': 12, 'collect_incomplete': 20, 'collect_max': 45, 'reply_ttl': 120, 'topic_gap': 120, 'context_age': 300, 'time_partition_enabled': True, 'partition_gap': 90, 'partition_span': 300, 'reference_age': 180, 'auto_retry': True, 'retry_attempts': 3, 'retry_base': 5, 'context_messages': 15, 'output_tokens': 128, 'messages_hour': 30, 'model_calls_hour': 120, 'cooldown_seconds': 120, 'delay_min': 8, 'delay_max': 12, 'mention_probability': 0.9, 'topic_enabled': True, 'topic_interval': 3600, 'stickers_enabled': True, 'sticker_hour': 3, 'sticker_interval': 600, 'challenge_filter': True, 'catchphrase_filter': True, 'chat_enabled': True, 'mention_only': False, 'topic_start_hour': 8, 'topic_end_hour': 23, 'topic_idle_min': 300, 'topic_idle_max': 1200, 'reply_max_parts': 3, 'reply_max_chars': 140, 'reply_brief_min': 5, 'reply_brief_max': 30, 'reply_part_delay': 2, 'chat_temperature': 0.85}
 DEFAULT_RELATIONSHIPS=[]
 MODERATION_CONTROL_DEFAULTS={'manual_enabled':True,'reserved_messages_hour':6,'reserved_model_calls_hour':12}
+
+def moderation_api_public():
+    try:return moderation_api.public(path=ROOT/'moderation-api.json')
+    except (ValueError,OSError):
+        # Fail closed for audit while preserving unrelated group/chat settings.
+        return moderation_api.public(dict(moderation_api.DEFAULT))
 
 def connection_defaults():
     model=json.loads((ROOT/'model.json').read_text(encoding='utf-8'))
@@ -30,7 +37,7 @@ def validate_connection(value):
     return {'group_id':group,'base_url':url,'model':model,'disable_thinking':value['disable_thinking']}
 
 def defaults():
-    return {'log_control':dict(error_log.LOG_DEFAULT),'security':dict(ai_guard.DEFAULT),'version':1,'plugins':plugin_features.validate({}),'relationships':copy.deepcopy(DEFAULT_RELATIONSHIPS),'connection':connection_defaults(),'persona':(ROOT/'persona.txt').read_text(encoding='utf-8'),'runtime':copy.deepcopy(DEFAULT_RUNTIME),'moderation':json.loads((ROOT/'moderation.json').read_text(encoding='utf-8')),'keywords':[]}
+    return {'moderation_api':moderation_api_public(),'log_control':dict(error_log.LOG_DEFAULT),'security':dict(ai_guard.DEFAULT),'version':1,'plugins':plugin_features.validate({}),'relationships':copy.deepcopy(DEFAULT_RELATIONSHIPS),'connection':connection_defaults(),'persona':(ROOT/'persona.txt').read_text(encoding='utf-8'),'runtime':copy.deepcopy(DEFAULT_RUNTIME),'moderation':json.loads((ROOT/'moderation.json').read_text(encoding='utf-8')),'keywords':[]}
 
 def validate_moderation(value,group_id):
     if not isinstance(value,dict):raise ValueError('天网设置格式不正确')
@@ -112,7 +119,7 @@ def validate(value):
     groups=validate_plugin_groups(value.get('plugin_groups'),value.get('plugins',{}),connection['group_id'])
     learning=memory_learning.validate_groups(value.get('learning_groups',{}))
     runtime_groups=validate_runtime_groups(value.get('runtime_groups',{}),runtime,{row['group_id'] for row in subscriptions}|set(groups)|set(learning)|{connection['group_id']})
-    return {'log_control':error_log.validate_log_control(value.get('log_control',{})),'moderation_intake':moderation_intake.validate(value.get('moderation_intake')),'model_control':model_gate.validate(value.get('model_control',{})),'runtime_groups':runtime_groups,'account_limits':validate_account_limits(value.get('account_limits'),runtime),'security':ai_guard.validate(value.get('security',{})),'version':2,'learning_groups':learning,'groups':subscriptions,'plugin_groups':groups,'plugins':groups.get(str(connection['group_id']),plugin_features.validate({})),'relationships':relationships,'connection':connection,'persona':persona,'runtime':{k:runtime[k] for k in DEFAULT_RUNTIME},'moderation':fixed,'keywords':clean}
+    return {'moderation_api':moderation_api.public(value.get('moderation_api',{})),'log_control':error_log.validate_log_control(value.get('log_control',{})),'moderation_intake':moderation_intake.validate(value.get('moderation_intake')),'model_control':model_gate.validate(value.get('model_control',{})),'runtime_groups':runtime_groups,'account_limits':validate_account_limits(value.get('account_limits'),runtime),'security':ai_guard.validate(value.get('security',{})),'version':2,'learning_groups':learning,'groups':subscriptions,'plugin_groups':groups,'plugins':groups.get(str(connection['group_id']),plugin_features.validate({})),'relationships':relationships,'connection':connection,'persona':persona,'runtime':{k:runtime[k] for k in DEFAULT_RUNTIME},'moderation':fixed,'keywords':clean}
 
 def validate_subscriptions(rows,primary):
     if rows is None:rows=[{'group_id':primary,'enabled':True}]
@@ -157,10 +164,15 @@ def relationship_for(rows,user_id):
     return next(({k:v for k,v in row.items() if k not in ('user_id','enabled')} for row in rows if row['enabled'] and str(user_id)==row['user_id']),None)
 
 def load():
-    return validate(json.loads(PATH.read_text(encoding='utf-8'))) if PATH.exists() else validate(defaults())
+    value=json.loads(PATH.read_text(encoding='utf-8')) if PATH.exists() else defaults()
+    # The separate secret store is authoritative. General settings snapshots
+    # never contain the credential and cannot restore or replace it.
+    value['moderation_api']=moderation_api_public()
+    return validate(value)
 
 def save(value):
     value=validate(value)
+    value['moderation_api']=moderation_api_public()
     if PATH.exists():
         backup=ROOT/'settings-backups';backup.mkdir(exist_ok=True)
         (backup/f'{time.time_ns()}.json').write_bytes(PATH.read_bytes())

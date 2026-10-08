@@ -76,7 +76,7 @@ const context = vm.createContext({
   toast: message => notices.push(message),
   collectPluginDraft() {}, collectMemberDraft() {}, collectLimits() {},
   collectModerationIntake() {}, collectSecurity() {}, renderPlugins() {},
-  renderWorkspace() {}, renderMultiGroups() {}, renderStatus() {}, renderMemberMemory() {},
+  renderWorkspace() {}, renderMultiGroups() {}, renderStatus() {}, renderMemberMemory() {}, resetModerationReview() {},
   readMemory() { readGroups.push(context.memoryGroup); return Promise.resolve(); },
   async status() {},
   api: async (url, body) => {

@@ -257,9 +257,11 @@ with patch.object(bot.time,'time',return_value=NOW),patch.object(bot.model_gate,
     def test_moderation_context_recovers_evicted_target_within_allowance(self):
         self.run_case(r'''
 bot.CONTEXT_MESSAGES=3
-bot.context=collections.deque([{'text':f'新聊天{i}','speaker':'群友','_message_id':i} for i in range(3)],maxlen=3)
+audit={**bot.moderation_api.DEFAULT,'enabled':True,'consent':True,'base_url':'https://audit.example.test/v1','model':'review-only','api_key':'test-audit-key','context_messages':3}
+(bot.BASE/'moderation-api.json').write_text(json.dumps(audit))
+bot.context=collections.deque([{'text':f'新聊天{i}','speaker':'群友','_message_id':i,'_user_id':100000005,'time':NOW} for i in range(3)],maxlen=3)
 items=[{'user_id':100000004,'message_id':99,'text':'我要杀了你','received_at':NOW}]
-reply={'choices':[{'message':{'content':json.dumps({'violations':[]})}}]}
+reply={'choices':[{'message':{'content':json.dumps({'violations':[],'reviewed_indices':[2]})}}]}
 with patch.object(bot,'post',return_value=reply) as called:
  verdicts,window=bot.classify_moderation(items)
  assert not verdicts and len(window)==3
@@ -272,6 +274,8 @@ with patch.object(bot,'post',return_value=reply) as called:
     def test_moderation_small_context_keeps_unreviewed_candidates_queued(self):
         self.run_case(r'''
 bot.CONTEXT_MESSAGES=1;bot.moderator.policy['enabled']=True;bot.last_moderation_check=0
+audit={**bot.moderation_api.DEFAULT,'context_messages':1}
+(bot.BASE/'moderation-api.json').write_text(json.dumps(audit))
 bot.moderation_pending=moderation_intake.ModerationIntake(bot.GROUP,{'audit_every':0,'batch_limit':12})
 for mid in (1,2,3):bot.moderation_pending.enqueue({'user_id':100000004,'message_id':mid,'text':f'我要杀了你 {mid}','received_at':NOW},now=NOW)
 with patch.object(bot.time,'time',return_value=NOW),patch.object(bot,'classify_moderation',return_value=([],[])) as classify:

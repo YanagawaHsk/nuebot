@@ -40,3 +40,6 @@ access-audit.tmp
 
 # Local model connection diagnostics
 model-diagnostics.json
+moderation-api.json
+moderation-api.json.tmp
+moderation-review/

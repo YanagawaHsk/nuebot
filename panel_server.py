@@ -17,6 +17,8 @@ import error_log
 import model_gate
 import model_reservoir
 import model_diagnostics
+import moderation_api
+import moderation_review
 import runtime_advice
 import memory_learning
 import member_memory
@@ -38,6 +40,8 @@ SAVE_LOCK=threading.Lock()
 MODEL_TEST_LOCK=threading.Lock()
 MODEL_TEST_INTERVAL=30
 MODEL_TEST_NEXT=0.0
+MODERATION_TEST_LOCK=threading.Lock()
+MODERATION_TEST_NEXT=0.0
 RESTART={'pending':False,'error':None}
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
@@ -165,6 +169,63 @@ def test_model(body):
         raise ValueError(error_log.suggestion(code)) from None
     finally:
         error_log.save_model_probe(ok,code,(time.monotonic()-started)*1000,configuration,revision,c['disable_thinking'])
+
+
+def test_moderation_api(body):
+    """Probe only fixed synthetic text using the dedicated credential/gate."""
+    global MODERATION_TEST_NEXT
+    path=ROOT/'moderation-api.json'
+    saved=moderation_api.load(path=path)
+    proposed=moderation_api.public(body.get('config',{}))
+    key=body.get('api_key','')
+    if not isinstance(key,str) or len(key)>1000 or any(c in key for c in '\r\n'):raise ValueError('专用审核密钥格式不正确')
+    # A testing draft cannot send a saved credential to a new destination.
+    if proposed['base_url']!=saved['base_url'] and not key.strip():raise ValueError('切换专用审核地址时请单独填写该服务的密钥')
+    if (proposed['base_url'],proposed['model'])!=(saved['base_url'],saved['model']):raise ValueError('请先单独保存专用地址与模型，再确认数据发送同意并测试')
+    config={**proposed,'api_key':key.strip() or saved.get('api_key','')}
+    synthetic=[{'id':'synthetic-source-0','user_id':'synthetic-user','text':'今天天气很好'}]
+    messages=[{'role':'user','content':'这是固定合成测试。审核目标 index=0，来源 synthetic-source-0，synthetic-user 说“今天天气很好”。请仅返回 JSON 对象 {"violations":[],"reviewed_indices":[0]}。'}]
+    descriptor=moderation_api.request_descriptor(messages,config=config,test=True)
+    with MODERATION_TEST_LOCK:
+        now=time.monotonic()
+        if now<MODERATION_TEST_NEXT:raise ValueError('专用审核测试需间隔30秒，请稍后再试')
+        MODERATION_TEST_NEXT=now+30
+    service=model_gate.service(descriptor['service_override']['base_url'],descriptor['service_override']['api_key'])
+    timeout=min(10,descriptor['timeout_seconds'])
+    policy={**settings.load()['model_control'],'request_timeout':timeout};payload=descriptor['payload']
+    request=urllib.request.Request(descriptor['url'],data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+descriptor['api_key'],'Content-Type':'application/json'})
+    reservation=None;opened=False
+    try:
+        with model_gate.acquire(service,0,'learning',policy):
+            reservation=model_reservoir.reserve(service,model_reservoir.estimate_input(payload),payload['max_tokens'],policy,purpose='learning')
+            model_gate.start_request(service,policy)
+            deadline=time.monotonic()+timeout
+            model_reservoir.mark_started(reservation);opened=True
+            with opener.open(request,timeout=timeout) as response:
+                if response.geturl()!=request.full_url:raise ValueError('RedirectRejected')
+                chunks=[];size=0
+                while True:
+                    remaining=deadline-time.monotonic()
+                    if remaining<=0:raise TimeoutError('ModelRequestTimeout')
+                    transport=getattr(getattr(getattr(response,'fp',None),'raw',None),'_sock',None)
+                    if transport is not None:transport.settimeout(remaining)
+                    chunk=response.read1(4096) if hasattr(response,'read1') else response.read(65537)
+                    if not chunk:break
+                    size+=len(chunk)
+                    if size>65536:raise ValueError('ModelResponseTooLarge')
+                    chunks.append(chunk)
+                result=json.loads(b''.join(chunks))
+                model_reservoir.settle(reservation,model_diagnostics.response_fields(result,getattr(response,'headers',None)))
+            choices=result.get('choices') if isinstance(result,dict) else None
+            message=choices[0].get('message') if isinstance(choices,list) and choices and isinstance(choices[0],dict) else None
+            if not isinstance(message,dict) or not isinstance(message.get('content'),str) or not message['content'].strip():raise ValueError('EmptyReply')
+            if choices[0].get('finish_reason')=='length' or moderation_api.validate_verdicts(message['content'],synthetic,[0]):raise ValueError('InvalidSyntheticVerdict')
+        return {'ok':True,'synthetic':True,'message':'专用审核接口固定合成文字测试成功；未读取群聊、未发群消息'}
+    except Exception as exc:
+        if opened:model_reservoir.fail(reservation,http_status=exc.code if isinstance(exc,urllib.error.HTTPError) else None)
+        else:model_reservoir.abort_before_http(reservation)
+        # No provider response, request URL, key or test output is exposed.
+        raise ValueError('专用审核测试未成功，请核对地址、模型、密钥及协议开关') from None
 
 def reply_health(group,hours=24):
     workers=group_workers.statuses()
@@ -351,6 +412,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/auth/audit':return self.reply({'entries':ACCESS.audit_entries()})
         if self.path=='/api/security':return self.reply({'policy':ai_guard.policy(settings.load()),'core_prompt':ai_guard.SYSTEM,'status':snapshot().get('security_counts',{}),'groups':[{k:row.get(k) for k in ('group','security_counts','fresh')} for row in group_workers.statuses()]})
         if self.path=='/api/settings':return self.reply(settings.load())
+        if self.path=='/api/moderation-api':
+            try:return self.reply(moderation_api.public(path=ROOT/'moderation-api.json'))
+            except (ValueError,OSError):return self.reply({'error':'专用审核配置无法读取，请核对独立配置文件；审核转入人工待审'},400)
+        if urlsplit(self.path).path=='/api/moderation-review':
+            try:
+                query=parse_qs(urlsplit(self.path).query)
+                if any(len(query.get(key,[]))!=1 for key in ('group_id',)) or any(len(query.get(key,['']))!=1 for key in ('state','offset')):raise ValueError('审核参数不正确')
+                requested=query['group_id'][0]
+                if not requested.isdigit():raise ValueError('审核群号不正确')
+                gid=self.learning_group(requested);offset=int(query.get('offset',['0'])[0]);state=query.get('state',['pending'])[0]
+                if not 0<=offset<=10000:raise ValueError('审核页码不正确')
+                store=moderation_review.Store(gid,root=ROOT)
+                return self.reply({**store.list(state=state,offset=offset),'group_id':gid,'counts':store.snapshot()})
+            except (ValueError,TypeError,OSError):return self.reply({'error':'无法读取该群待审记录，请核对已配置群号和筛选条件'},400)
         if self.path=='/api/snowluma/status':
             value=snowluma_bridge.status()
             return self.reply({**value,'bridge_available':True,'url':snowluma_bridge.BRIDGE_ORIGIN+'/',
@@ -467,6 +542,20 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/settings':
                 with SAVE_LOCK:saved,restarting=save_configuration(body)
                 return self.reply({'ok':True,'settings':saved,'restarting':restarting,'revision':str(settings.PATH.stat().st_mtime_ns)})
+            if self.path=='/api/moderation-api':
+                with SAVE_LOCK:value=moderation_api.save(body.get('config',{}),key=body.get('api_key',''),path=ROOT/'moderation-api.json')
+                return self.reply({'ok':True,'config':value})
+            if self.path=='/api/test-moderation-api':return self.reply(test_moderation_api(body))
+            if self.path=='/api/moderation-review':
+                if type(body.get('group_id')) is not int:raise ValueError('审核群号不正确')
+                gid=self.learning_group(body['group_id']);ident=body.get('id');action=body.get('action')
+                if not isinstance(ident,str) or not ident or len(ident)>100 or action not in ('warn','ignore','correct'):raise ValueError('审核操作不正确')
+                # HTTP only records a request. The scoped group worker owns any
+                # actual warning; identity comes from the authenticated admin.
+                store=moderation_review.Store(gid,root=ROOT)
+                value=store.request(ident,action,body.get('expected_revision'),reason=body.get('reason',''))
+                self.audit_target=str(gid)+':'+ident+':'+action
+                return self.reply({'ok':True,'item':value,'group_id':gid})
             if self.path=='/api/plugin-manage':
                 key=body.get('id');action=body.get('action')
                 if key not in plugin_features.READY or action not in ('uninstall','restore'):raise ValueError('插件操作不正确')

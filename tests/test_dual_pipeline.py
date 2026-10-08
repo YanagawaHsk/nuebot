@@ -247,7 +247,7 @@ with bot.model_reservoir.db() as conn:
 bot.SETTINGS['model_control'].update(reservoir_enabled=True,input_capacity_tokens=10000,
  output_capacity_tokens=100,input_refill_tokens_per_minute=1,output_refill_tokens_per_minute=1)
 body={'messages':[{'role':'user','content':'synthetic 汉字输入'}],'max_tokens':40}
-estimate=bot.model_reservoir.estimate_input(body)
+estimate=bot.model_reservoir.estimate_input({**body,'messages':[{'role':'user','content':bot.ai_guard.redact(body['messages'][0]['content'],('synthetic',))}]})
 url=bot.MODEL['base_url'].rstrip('/')+'/chat/completions'
 rejected=urllib.error.HTTPError(url,429,'synthetic rate limit',{'Retry-After':'5'},None)
 success={'choices':[{'message':{'content':'{"speak":false}'}}],

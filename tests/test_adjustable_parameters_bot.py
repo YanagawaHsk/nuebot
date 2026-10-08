@@ -68,7 +68,9 @@ assert bot.HTTP['accessToken'] not in redacted and '[已隐藏密钥]' in redact
 bot.SETTINGS['model_control'].update(request_timeout=70,reservoir_enabled=False)
 url=bot.MODEL['base_url'].rstrip('/')+'/chat/completions'
 def opened(request,**kwargs):
- return response({'choices':[{'message':{'content':'{}'}}]},request.full_url)
+ return response({'choices':[{'message':{'content':'{"violations":[],"reviewed_indices":[0]}'}}]},request.full_url)
+audit={**bot.moderation_api.DEFAULT,'enabled':True,'consent':True,'base_url':'https://audit.example.test/v1','model':'review-only','api_key':'test-audit-key','timeout_seconds':55}
+(bot.BASE/'moderation-api.json').write_text(json.dumps(audit))
 with patch.object(bot.model_gate,'acquire',return_value=nullcontext()),\
  patch.object(bot.model_gate,'start_request'),\
  patch.object(bot.shared_budget,'reserve_model',return_value='a'*32),\
@@ -79,9 +81,9 @@ with patch.object(bot.model_gate,'acquire',return_value=nullcontext()),\
  assert http.call_args.kwargs['timeout']==70
  bot.post(url,{},'synthetic',purpose='learning')
  assert http.call_args.kwargs['timeout']==70
- verdicts,window=bot.classify_moderation([{'message_id':1,'text':'公开话题'}])
+ verdicts,window=bot.classify_moderation([{'user_id':100000004,'message_id':1,'text':'公开话题','received_at':NOW}])
  assert verdicts==[] and len(window)==1
- assert http.call_args.kwargs['timeout']==70
+ assert http.call_args.kwargs['timeout']==55
  bot.post(url,{},'synthetic',timeout=10,purpose='moderation')
  assert http.call_args.kwargs['timeout']==10
  bot.post('http://127.0.0.1:3000/get_login_info',{},'synthetic')

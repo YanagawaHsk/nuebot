@@ -1,24 +1,20 @@
 """Untrusted model confidence must never authorize a warning or punishment."""
-import ast
-import collections
 import json
 import math
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import Mock
 
 SOURCE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(SOURCE))
 from moderation import Moderator
+import moderation_api
 
 
 class ConfidenceTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.tmp=tempfile.TemporaryDirectory(dir=SOURCE);self.addCleanup(self.tmp.cleanup)
         policy=json.loads((SOURCE/'moderation.example.json').read_text(encoding='utf-8'))
         policy.update(enabled=True,warnings_enabled=True,punishments_enabled=True)
         self.planner=Moderator(policy,Path(self.tmp.name)/'state.json')
@@ -44,25 +40,45 @@ class ConfidenceTests(unittest.TestCase):
         self.assertEqual(self.planner.plan(100004,self.verdict(.99),bot_role='admin',now=1000),{'action':'individual_mute','duration':600})
 
     def classifier(self,payload):
-        source=ast.parse((SOURCE/'bot.py').read_text(encoding='utf-8'))
-        node=next(node for node in source.body if isinstance(node,ast.FunctionDef) and node.name=='classify_moderation')
-        namespace={'lock':threading.Lock(),'context':collections.deque(),'CONTEXT_MESSAGES':15,
-                   'OUTPUT_TOKENS':128,'MODEL':{'base_url':'https://example.invalid','model':'synthetic','api_key':'dummy'},
-                   'ai_guard':SimpleNamespace(REVIEW='synthetic review policy'),
-                   'model_output':SimpleNamespace(content=lambda value:value),'json':json,'math':math,
-                   'post':Mock(return_value=json.dumps(payload))}
-        exec(compile(ast.Module(body=[node],type_ignores=[]),'bot.py','exec'),namespace)
-        return namespace['classify_moderation']([{'message_id':1,'text':'待审消息'}])[0]
+        window=[{'id':1,'user_id':100004,'text':'我要杀了你',
+                 'sources':[{'id':'t0.s0','user_id':100004,'text':'我要杀了你'}]}]
+        return moderation_api.validate_verdicts(json.dumps(payload),window,[0])
 
-    def test_classifier_drops_json_nan_infinity_and_invalid_values(self):
+    def proven(self,confidence=.99,**overrides):
+        return {'index':0,**self.verdict(confidence),
+                'evidence':[{'source_id':'t0.s0','quote':'杀了你'}],
+                'reason':'目标本人的原话包含直接威胁',**overrides}
+
+    def test_classifier_rejects_json_nan_infinity_and_invalid_values(self):
         for confidence in (math.nan,math.inf,-math.inf,True,None,'0.99',-1,1.001,10**400):
             with self.subTest(confidence=confidence):
-                self.assertEqual(self.classifier({'violations':[{'index':0,**self.verdict(confidence)}]}),[])
+                with self.assertRaises(ValueError):
+                    self.classifier({'violations':[self.proven(confidence)],'reviewed_indices':[0]})
 
-    def test_classifier_retains_valid_target_without_invalid_neighbour(self):
-        good={'index':0,**self.verdict(.99)}
-        bad={'index':0,**self.verdict(math.nan)}
-        self.assertEqual(self.classifier({'violations':[bad,good]}),[good])
+    def test_partial_or_duplicate_target_schema_is_rejected_as_a_whole(self):
+        good=self.proven()
+        bad=self.proven(math.nan)
+        for payload in ({'violations':[bad,good],'reviewed_indices':[0]},
+                        {'violations':[good,good],'reviewed_indices':[0]},
+                        {'violations':[good]},
+                        {'violations':[good],'reviewed_indices':[]}):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValueError):self.classifier(payload)
+
+    def test_only_exact_target_authored_quote_is_autoeligible(self):
+        accepted=self.classifier({'violations':[self.proven()],'reviewed_indices':[0]})
+        self.assertEqual(len(accepted),1)
+        self.assertTrue(accepted[0]['autoeligible'])
+        for evidence in ([],[{'source_id':'t0.s0','quote':'我会杀你'}],
+                         [{'source_id':'unseen','quote':'杀了你'}]):
+            with self.subTest(evidence=evidence):
+                result=self.classifier({'violations':[self.proven(evidence=evidence)],'reviewed_indices':[0]})
+                self.assertFalse(result[0]['autoeligible'])
+
+    def test_matching_quote_from_another_author_cannot_authorize_target_action(self):
+        window=[{'user_id':100004,'sources':[{'id':'t0.s0','user_id':100005,'text':'我要杀了你'}]}]
+        result=moderation_api.validate_verdicts({'violations':[self.proven()],'reviewed_indices':[0]},window,[0])
+        self.assertFalse(result[0]['autoeligible'])
 
 
 if __name__=='__main__':unittest.main()
