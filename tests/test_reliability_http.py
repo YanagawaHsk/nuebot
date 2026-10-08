@@ -1,5 +1,6 @@
 """Exercise the real reliability endpoints on an isolated loopback panel."""
 import http.client
+from datetime import datetime
 import importlib
 import json
 import shutil
@@ -132,7 +133,7 @@ class ReliabilityHttpTests(unittest.TestCase):
     def log(self, group, code):
         directory = self.s.group_workers.directory(group)
         directory.mkdir(parents=True, exist_ok=True)
-        (directory / 'events.log').write_text('2026-10-07 12:00:00,000 model_error ' + json.dumps({'code': code, 'prompt': 'private-chat-should-not-be-exposed'}) + '\n', encoding='utf-8')
+        (directory / 'events.log').write_text(datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]+' model_error ' + json.dumps({'code': code, 'prompt': 'private-chat-should-not-be-exposed'}) + '\n', encoding='utf-8')
 
     def test_anonymous_and_custodian_cannot_read_or_change_reliability_data(self):
         ident = self.unknown_delivery()

@@ -1,4 +1,5 @@
 import concurrent.futures,json,tempfile,unittest,urllib.error,sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -89,6 +90,7 @@ class DeliveryTests(unittest.TestCase):
         with patch.object(error_log,'ROOT',Path(self.tmp.name)):
             p=Path(self.tmp.name)/'group-workers/10001/events.log';p.parent.mkdir(parents=True)
             p.write_text('2026-10-06 22:00:00,000 model_error '+json.dumps({'type':'HTTPError','code':'HTTP429','secret':'not-to-be-returned'})+'\n2026-10-06 22:00:01,000 memory_learning_retry '+json.dumps({'reason':'HTTP429','wait_seconds':30}),encoding='utf-8')
-            result=error_log.entries(10001);self.assertEqual(result['total'],2);self.assertNotIn('not-to-be-returned',json.dumps(result));self.assertEqual(error_log.entries(10001,category='memory')['total'],1)
+            now=datetime(2026,10,8).timestamp()
+            result=error_log.entries(10001,now=now);self.assertEqual(result['total'],2);self.assertNotIn('not-to-be-returned',json.dumps(result));self.assertEqual(error_log.entries(10001,category='memory',now=now)['total'],1)
 
 if __name__=='__main__':unittest.main()

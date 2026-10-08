@@ -10,7 +10,7 @@ class ErrorOutcomeTests(unittest.TestCase):
               (2,'2026-10-08 09:20:02,971','reply_health',{'stage':'skipped','reason_key':'PluginFailure'}),
               (3,'2026-10-08 09:20:03,971','reply_health',{'stage':'skipped','reason_key':'ModelSilent'})]
         with patch.object(error_log,'_read',return_value=(rows,{'truncated':False})):
-            result=error_log.entries(10001)
+            result=error_log.entries(10001,now=4)
         outcomes={row['reason_key']:row['outcome'] for row in result['entries']}
         self.assertEqual(outcomes,{'ModelFailure':'failure','PluginFailure':'failure','ModelSilent':'silent'})
 

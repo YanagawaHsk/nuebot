@@ -255,8 +255,7 @@ def reconcile_confirmed_delivery(gid,ident):
     if delivery_queue.claim_component(gid,ident,'telemetry'):
         import logging
         # Match the worker's bounded log format and use safe fixed fields only.
-        from logging.handlers import RotatingFileHandler
-        handler=RotatingFileHandler(group_workers.directory(gid)/'events.log',maxBytes=2*1024*1024,backupCount=2,encoding='utf-8')
+        handler=error_log.rotating_handler(group_workers.directory(gid)/'events.log',settings.load().get('log_control'))
         try:
             handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
             data={'stage':'confirmed','reason_key':'ReconciledConfirmed','count':1,'kind':row['kind']}

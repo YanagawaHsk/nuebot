@@ -37,6 +37,7 @@ class DeliverySettlementIntegrationTests(unittest.TestCase):
         self.worker=self.root/'group-workers'/str(self.group);self.worker.mkdir(parents=True)
         (self.root/'assets').mkdir()
         for p in (patch.object(queue,'ROOT',self.root),patch.object(budget,'BASE',self.root),
+                  patch.object(error_log,'ROOT',self.root),
                   patch.object(budget,'PATH',self.root/'shared-budget.json'),
                   patch.object(plugins,'ASSETS',self.root/'assets'),
                   patch.object(plugins.Engine,'refresh_assets',lambda self:None)):
@@ -57,7 +58,7 @@ class DeliverySettlementIntegrationTests(unittest.TestCase):
                   'record':lambda event,**data:self.records.append((event,data)),
                   'reply_event':lambda stage,reason,**data:self.events.append((stage,reason,data))}
         functions('bot.py',{'dispatch','_dispatch'},self.bot)
-        self.panel={'json':json,'time':time,'ROOT':self.root,'BOT_ID':100000001,'shared_budget':budget,
+        self.panel={'json':json,'time':time,'ROOT':self.root,'BOT_ID':100000001,'shared_budget':budget,'error_log':error_log,
                     'delivery_queue':queue,'plugin_features':plugins,
                     'group_workers':types.SimpleNamespace(directory=lambda gid:self.root/'group-workers'/str(gid),locked=lambda path:False),
                     'settings':types.SimpleNamespace(load=lambda:{'groups':[{'group_id':self.group,'enabled':True}]}),

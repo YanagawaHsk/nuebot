@@ -5,7 +5,6 @@ from datetime import datetime
 import json
 import logging
 import math
-from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import random
@@ -86,7 +85,8 @@ last_send = 0.0
 last_generation = 0.0
 queued_sources = {}
 last_topic = time.time()
-logging.basicConfig(handlers=[RotatingFileHandler(ROOT/'events.log',maxBytes=2*1024*1024,backupCount=2,encoding='utf-8')],level=logging.INFO,format='%(asctime)s %(message)s')
+log_handler=error_log.rotating_handler(ROOT/'events.log',SETTINGS.get('log_control'))
+logging.basicConfig(handlers=[log_handler],level=logging.INFO,format='%(asctime)s %(message)s')
 # Keep the hourly message limit across a routine restart.
 if (ROOT/'events.log').exists():
     for line in (ROOT/'events.log').read_text(encoding='utf-8').splitlines():
@@ -170,6 +170,7 @@ def reload_settings(force=False):
             OUTPUT_TOKENS=runtime['output_tokens'];REPLY_COOLDOWN_SECONDS=runtime['cooldown_seconds'];CONTEXT_MESSAGES=runtime['context_messages']
             learning_windows.configure(memory_learning.config(value,GROUP))
             SETTINGS_STAMP=stamp
+        error_log.configure_handler(log_handler,value.get('log_control'))
         record('settings_applied',context_messages=CONTEXT_MESSAGES,output_tokens=OUTPUT_TOKENS,max_messages_hour=MAX_MESSAGES_HOUR)
         if not memory_learning.config(SETTINGS,GROUP)['enabled']:learning_windows.clear()
     except Exception as exc:record('settings_error',**error_log.fields(exc))

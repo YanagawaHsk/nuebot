@@ -1,4 +1,5 @@
 import concurrent.futures,json,sqlite3,sys,tempfile,unittest,urllib.error
+from datetime import datetime
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
@@ -202,12 +203,13 @@ class RetryLogTests(unittest.TestCase):
             rows.append('2026-10-07 22:00:00,000 model_error []')
             rows.append('2026-10-07 22:00:00,000 untrusted<error '+json.dumps({'type':'ValueError'}))
             path.write_text('\n'.join(rows),encoding='utf-8')
-            result=error_log.entries(10001)
+            now=datetime(2026,10,8).timestamp()
+            result=error_log.entries(10001,now=now)
             self.assertEqual(result['total'],7);self.assertEqual(result['entries'][0]['code'],'UnknownError')
             self.assertEqual([row['retry_seconds'] for row in result['entries'][1:]],[None,None,None,None,None,30])
-            self.assertEqual(error_log.entries(10002)['total'],0)
+            self.assertEqual(error_log.entries(10002,now=now)['total'],0)
             self.assertNotIn('private',json.dumps(result));self.assertNotIn('secret.invalid',json.dumps(result))
-            self.assertEqual(error_log.entries(10001,category='model')['total'],6)
+            self.assertEqual(error_log.entries(10001,category='model',now=now)['total'],6)
         exc=urllib.error.HTTPError('https://secret.invalid/token',429,'private response',{},None)
         self.assertEqual(error_log.fields(exc),{'type':'HTTPError','code':'HTTP429','http_status':429,'provider_class':'unknown'})
         self.assertEqual(error_log.fields(ValueError('private key')),{'type':'ValueError'})

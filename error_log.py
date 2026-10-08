@@ -3,6 +3,7 @@ import collections
 from contextlib import closing
 from datetime import datetime, timezone
 import json
+from logging.handlers import RotatingFileHandler
 import math
 import os
 from pathlib import Path
@@ -16,6 +17,9 @@ import model_diagnostics
 
 ROOT = Path(__file__).resolve().parent
 LOG_BYTES = 2 * 1024 * 1024
+LOG_DEFAULT = {'file_max_mb': 2, 'backup_count': 2, 'max_error_entries': 1000, 'error_view_days': 7}
+LOG_RANGES = {'file_max_mb': (1, 10), 'backup_count': (1, 5),
+              'max_error_entries': (100, 10000), 'error_view_days': (1, 30)}
 STAGES = ('received', 'queued', 'triggered', 'skipped', 'generated', 'confirmed',
           'send_failed', 'send_unknown', 'expired')
 STAGE_UNITS = {name: ('jobs' if name in ('triggered', 'generated') else
@@ -75,6 +79,56 @@ _EVENTS = {
 _LINE = re.compile(r'^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,6})?)\s+([a-z][a-z0-9_]{0,79})\s+(.*)$')
 _PROBE_LOCK = threading.Lock()
 PROBE_TTL = 300
+
+
+def validate_log_control(value):
+    """Validate only configurable diagnostic limits, preserving legacy defaults."""
+    if not isinstance(value, dict):
+        raise ValueError('日志容量设置格式不正确')
+    out = {**LOG_DEFAULT, **value}
+    for key, (low, high) in LOG_RANGES.items():
+        if type(out[key]) is not int or not low <= out[key] <= high:
+            raise ValueError('日志容量参数超出范围')
+    return {key: out[key] for key in LOG_DEFAULT}
+
+
+def _log_policy(value=None):
+    if value is None:
+        try:
+            path = ROOT / 'settings.json'
+            with path.open('rb') as stream:
+                raw = stream.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                return dict(LOG_DEFAULT)
+            saved = json.loads(raw.decode('utf-8'))
+            value = saved.get('log_control', {}) if isinstance(saved, dict) else {}
+        except (OSError, ValueError, TypeError, RecursionError):
+            value = {}
+    try:
+        return validate_log_control(value)
+    except (ValueError, TypeError):
+        return dict(LOG_DEFAULT)
+
+
+def rotating_handler(path, settings=None):
+    """Create an events-log handler; existing files rotate only on future writes."""
+    policy = _log_policy(settings)
+    return RotatingFileHandler(path, maxBytes=policy['file_max_mb'] * 1024 * 1024,
+                               backupCount=policy['backup_count'], encoding='utf-8')
+
+
+def configure_handler(handler, value=None):
+    """Change rotation thresholds under the handler lock without deleting history."""
+    policy = _log_policy(value)
+    if not isinstance(handler, RotatingFileHandler):
+        raise ValueError('日志写入器类型不正确')
+    handler.acquire()
+    try:
+        handler.maxBytes = policy['file_max_mb'] * 1024 * 1024
+        handler.backupCount = policy['backup_count']
+    finally:
+        handler.release()
+    return policy
 
 
 def safe_code(value):
@@ -169,8 +223,11 @@ def _read(group):
         raise ValueError('群号不正确')
     directory = ROOT / 'group-workers' / str(group)
     rows = []
-    source = {'available': False, 'files_read': 0, 'truncated': False, 'malformed_lines': 0, 'read_errors': 0}
-    for filename in ('events.log.2', 'events.log.1', 'events.log'):
+    source = {'available': False, 'files_read': 0, 'truncated': False, 'malformed_lines': 0, 'read_errors': 0,
+              'read_max_bytes_per_file': LOG_BYTES, 'read_max_files': 6}
+    # Read previously retained backups too when the configured backup count falls.
+    # Reading never removes files; rotation policy applies only to future writes.
+    for filename in tuple('events.log.' + str(number) for number in range(5, 0, -1)) + ('events.log',):
         path = directory / filename
         try:
             with path.open('rb') as stream:
@@ -206,16 +263,32 @@ def _read(group):
     return rows, source
 
 
-def entries(group, offset=0, category='all'):
+def entries(group, offset=0, category='all', now=None):
     if type(offset) is not int or not 0 <= offset <= 10000:
         raise ValueError('页码不正确')
     if category not in ('all', 'model', 'memory', 'send', 'connection', 'plugin', 'moderation', 'other'):
         raise ValueError('日志分类不正确')
+    policy = _log_policy()
+    now = time.time() if now is None else now
+    try:
+        valid_now = type(now) in (int, float) and math.isfinite(now)
+    except OverflowError:
+        valid_now = False
+    if not valid_now:
+        raise ValueError('日志读取时间不正确')
     rows, source = _read(group)
+    errors = [row for row in rows if _is_error(row[2], row[3])]
+    recent = [row for row in errors if now - policy['error_view_days'] * 86400 <= row[0] <= now]
+    retained = recent[-policy['max_error_entries']:]
+    limits = {'max_error_entries': policy['max_error_entries'], 'error_view_days': policy['error_view_days'],
+              'available_error_entries': len(errors), 'retained_error_entries': len(retained),
+              'excluded_by_days': len(errors) - len(recent), 'excluded_by_count': len(recent) - len(retained),
+              'read_max_bytes_per_file': LOG_BYTES, 'read_max_files': 6,
+              'configured_disk_max_bytes': policy['file_max_mb'] * 1024 * 1024 * (policy['backup_count'] + 1)}
     result = []
-    for _, stamp, event, data in rows:
-        if not _is_error(event, data):
-            continue
+    # Apply the shared date/count window before category filtering. Changing the
+    # selected category must not resurrect entries outside that shared window.
+    for _, stamp, event, data in retained:
         kind = _category(event)
         if category != 'all' and category != kind:
             continue
@@ -236,7 +309,8 @@ def entries(group, offset=0, category='all'):
                        'missing_http_status': code == 'HTTPError', **provider})
     result.reverse()
     return {'entries': result[offset:offset + 50], 'total': len(result), 'offset': offset,
-            'truncated': source['truncated'], 'source': source}
+            'truncated': source['truncated'], 'source': source, 'policy': policy, 'limits': limits,
+            'limited': bool(limits['excluded_by_days'] or limits['excluded_by_count'])}
 
 
 def _iso(instant):

@@ -30,7 +30,7 @@ class ProviderLogTests(unittest.TestCase):
                 'model': 'synthetic-private-value', 'url': 'synthetic-private-value'}
         rows = [(1, '1970-01-01 00:00:01', 'model_error', data)]
         with patch.object(error_log, '_read', return_value=(rows, {'truncated': False})):
-            result = error_log.entries(10001)['entries'][0]
+            result = error_log.entries(10001,now=2)['entries'][0]
         for name in ('provider_class', 'http_status', 'request_id', 'retry_after_seconds',
                      'usage_prompt_tokens', 'usage_completion_tokens', 'usage_total_tokens', 'input_chars'):
             self.assertEqual(result[name], data[name])
@@ -47,7 +47,7 @@ class ProviderLogTests(unittest.TestCase):
             rows = [(1, '1970-01-01 00:00:01', 'model_error', data)]
             with self.subTest(value=type(value).__name__), patch.object(
                     error_log, '_read', return_value=(rows, {'truncated': False})):
-                result = error_log.entries(10001)['entries'][0]
+                result = error_log.entries(10001,now=2)['entries'][0]
                 for name in data.keys() - {'code'}:
                     self.assertNotIn(name, result)
                 self.assertNotIn('synthetic-private-value', repr(result))
@@ -66,7 +66,7 @@ class ProviderLogTests(unittest.TestCase):
         rows = [(1, '1970-01-01 00:00:01', 'model_provider_error', data),
                 (1, '1970-01-01 00:00:01', 'model_error', data)]
         with patch.object(error_log, '_read', return_value=(rows, {'truncated': False})):
-            result = error_log.entries(10001)
+            result = error_log.entries(10001,now=2)
         self.assertEqual(result['total'], 1)
         self.assertEqual(result['entries'][0]['event'], 'model_error')
 
