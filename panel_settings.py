@@ -13,6 +13,7 @@ PATH=ROOT/'settings.json'
 RANGES={'collect_quiet': (5, 60), 'collect_incomplete': (5, 90), 'collect_max': (15, 120), 'reply_ttl': (30, 180), 'topic_gap': (60, 900), 'partition_gap': (30, 900), 'partition_span': (60, 1800), 'reference_age': (30, 1800), 'retry_attempts': (1, 5), 'retry_base': (3, 60), 'context_age': (60, 1800), 'context_messages': (1, 40), 'output_tokens': (32, 4096), 'messages_hour': (1, 120), 'model_calls_hour': (1, 360), 'cooldown_seconds': (0, 3600), 'delay_min': (0, 60), 'delay_max': (0, 90), 'mention_probability': (0, 1), 'topic_interval': (300, 86400), 'sticker_hour': (0, 30), 'sticker_interval': (0, 3600), 'topic_start_hour': (0, 23), 'topic_end_hour': (1, 24), 'topic_idle_min': (60, 3600), 'topic_idle_max': (60, 7200), 'reply_max_parts': (1, 5), 'reply_max_chars': (24, 500), 'reply_brief_min': (1, 60), 'reply_brief_max': (5, 120), 'reply_part_delay': (0, 10), 'chat_temperature': (0, 2)}
 DEFAULT_RUNTIME={'collect_quiet': 12, 'collect_incomplete': 20, 'collect_max': 45, 'reply_ttl': 120, 'topic_gap': 120, 'context_age': 300, 'time_partition_enabled': True, 'partition_gap': 90, 'partition_span': 300, 'reference_age': 180, 'auto_retry': True, 'retry_attempts': 3, 'retry_base': 5, 'context_messages': 15, 'output_tokens': 128, 'messages_hour': 30, 'model_calls_hour': 120, 'cooldown_seconds': 120, 'delay_min': 8, 'delay_max': 12, 'mention_probability': 0.9, 'topic_enabled': True, 'topic_interval': 3600, 'stickers_enabled': True, 'sticker_hour': 3, 'sticker_interval': 600, 'challenge_filter': True, 'catchphrase_filter': True, 'chat_enabled': True, 'mention_only': False, 'topic_start_hour': 8, 'topic_end_hour': 23, 'topic_idle_min': 300, 'topic_idle_max': 1200, 'reply_max_parts': 3, 'reply_max_chars': 140, 'reply_brief_min': 5, 'reply_brief_max': 30, 'reply_part_delay': 2, 'chat_temperature': 0.85}
 DEFAULT_RELATIONSHIPS=[]
+MODERATION_CONTROL_DEFAULTS={'manual_enabled':True,'reserved_messages_hour':6,'reserved_model_calls_hour':12}
 
 def connection_defaults():
     model=json.loads((ROOT/'model.json').read_text(encoding='utf-8'))
@@ -30,6 +31,21 @@ def validate_connection(value):
 
 def defaults():
     return {'log_control':dict(error_log.LOG_DEFAULT),'security':dict(ai_guard.DEFAULT),'version':1,'plugins':plugin_features.validate({}),'relationships':copy.deepcopy(DEFAULT_RELATIONSHIPS),'connection':connection_defaults(),'persona':(ROOT/'persona.txt').read_text(encoding='utf-8'),'runtime':copy.deepcopy(DEFAULT_RUNTIME),'moderation':json.loads((ROOT/'moderation.json').read_text(encoding='utf-8')),'keywords':[]}
+
+def validate_moderation(value,group_id):
+    if not isinstance(value,dict):raise ValueError('天网设置格式不正确')
+    policy={**MODERATION_CONTROL_DEFAULTS,**value}
+    for key in ('enabled','warnings_enabled','punishments_enabled','manual_enabled'):
+        if type(policy.get(key)) is not bool:raise ValueError('天网开关设置不正确')
+    for key,lo,hi in [('warnings_before_mute',1,5),('warning_window_seconds',60,7200),('individual_mute_seconds',60,3600),('reserved_messages_hour',0,30),('reserved_model_calls_hour',0,60)]:
+        if type(policy.get(key)) is not int or not lo<=policy[key]<=hi:raise ValueError('天网次数或时长超出范围')
+    if type(policy.get('minimum_confidence')) not in (int,float) or not .9<=policy['minimum_confidence']<=1:raise ValueError('判定置信度范围为0.9–1')
+    fixed=json.loads((ROOT/'moderation.json').read_text(encoding='utf-8'))
+    # Only adjustable policy fields can be changed by the panel. Identity,
+    # protected accounts and automatic whole-group restrictions stay fixed.
+    fixed.update({k:policy[k] for k in ('enabled','warnings_enabled','punishments_enabled','manual_enabled','warnings_before_mute','warning_window_seconds','individual_mute_seconds','minimum_confidence','reserved_messages_hour','reserved_model_calls_hour')})
+    fixed['group_id']=group_id
+    return fixed
 
 def validate_runtime(value):
     if not isinstance(value,dict):raise ValueError('群聊天设置格式不正确')
@@ -80,15 +96,7 @@ def validate(value):
     if not isinstance(persona,str) or not 1<=len(persona)<=30000:raise ValueError('人设需要1–30000个字符')
     if 'sk-' in persona:raise ValueError('请勿把API密钥写入人设')
     runtime=validate_runtime(value.get('runtime',{}))
-    policy=value.get('moderation',{})
-    for key in ('enabled','warnings_enabled','punishments_enabled'):
-        if type(policy.get(key)) is not bool:raise ValueError('天网开关设置不正确')
-    for key,lo,hi in [('warnings_before_mute',1,5),('warning_window_seconds',60,7200),('individual_mute_seconds',60,3600)]:
-        if type(policy.get(key)) is not int or not lo<=policy[key]<=hi:raise ValueError('天网次数或时长超出范围')
-    if type(policy.get('minimum_confidence')) not in (int,float) or not .9<=policy['minimum_confidence']<=1:raise ValueError('判定置信度范围为0.9–1')
-    fixed=json.loads((ROOT/'moderation.json').read_text(encoding='utf-8'))
-    fixed.update({k:policy[k] for k in ('enabled','warnings_enabled','punishments_enabled','warnings_before_mute','warning_window_seconds','individual_mute_seconds','minimum_confidence')})
-    fixed['group_id']=connection['group_id']
+    fixed=validate_moderation(value.get('moderation',{}),connection['group_id'])
     rules=value.get('keywords',[])
     if not isinstance(rules,list) or len(rules)>50:raise ValueError('最多50条关键词规则')
     clean=[]

@@ -25,6 +25,7 @@ import panel_auth
 import ai_guard
 import snowluma_bridge
 import panel_endpoint
+import http_body
 from local_identity import BOT_ID,OWNER_ID,DEFAULT_GROUP,onebot_path
 PLUGIN_ENGINE=plugin_features.Engine()
 ROOT=Path(__file__).resolve().parent
@@ -321,6 +322,7 @@ class Handler(BaseHTTPRequestHandler):
         if gid not in allowed:raise ValueError('请先配置这个群')
         return gid
     def reply(self,value,status=200,content_type='application/json; charset=utf-8',cookie=None):
+        if status>=400:http_body.drain_rejected_post(self)
         data=json.dumps(value,ensure_ascii=False).encode('utf-8') if isinstance(value,(dict,list)) else value.encode('utf-8')
         if self.command=='POST' and getattr(self,'audit_action',False) and status<400:
             ACCESS.audit(self.session['username'],urlsplit(self.path).path,getattr(self,'audit_target',''))
@@ -419,7 +421,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             size=int(self.headers.get('Content-Length','0'))
             if not 0<size<=150000:raise ValueError('内容过大')
-            body=json.loads(self.rfile.read(size))
+            raw=self.rfile.read(size);self._request_body_consumed=True
+            body=json.loads(raw)
             if not isinstance(body,dict):raise ValueError('请求格式不正确')
             if public:
                 key=ACCESS.setup(body.get('code'),body.get('username'),body.get('password')) if self.path=='/api/auth/setup' else ACCESS.login(body.get('username'),body.get('password'))

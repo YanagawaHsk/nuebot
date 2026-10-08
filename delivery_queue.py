@@ -4,7 +4,7 @@ from contextlib import contextmanager,nullcontext
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
-RETRYABLE_ERRORS={'Disconnected','MessageLimit','EarlierMessageUnsent','InterruptedBeforeSend','RetryableBeforeSend','OneBotRejected'}
+RETRYABLE_ERRORS={'Disconnected','MessageLimit','EarlierMessageUnsent','InterruptedBeforeSend','RetryableBeforeSend','OneBotRejected','ModerationPriority'}
 MAX_RETRY_DELAY=120
 
 @contextmanager

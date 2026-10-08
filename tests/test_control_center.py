@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -180,6 +181,32 @@ class ControlCenterHttpTests(unittest.TestCase):
         kwargs.setdefault('cookie', self.admin)
         kwargs.setdefault('host', self.snow_host)
         return self.request(path, **kwargs)
+
+    def test_rejected_core_and_bridge_post_drain_delayed_body_without_business_calls(self):
+        # HTTPConnection normally sends headers and body separately. Send a
+        # late small body to exercise the early-origin-rejection close race.
+        original=self.s.http_body.drain_rejected_post
+        for host in (self.core_host,self.snow_host):
+            with self.subTest(host=host),patch.object(self.s,'control') as control, \
+                 patch.object(self.s.http_body,'drain_rejected_post',wraps=original) as drained:
+                client=http.client.HTTPConnection('127.0.0.1',self.http.server_port,timeout=2)
+                body=b'{"action":"stop"}'
+                try:
+                    client.putrequest('POST','/api/control',skip_host=True)
+                    for key,value in [('Host',host),('Cookie',self.admin),
+                        ('Origin','http://rejected.invalid'),('X-Panel-Token',self.admin_csrf),
+                        ('Content-Length',str(len(body)))]:client.putheader(key,value)
+                    client.endheaders()
+                    time.sleep(.04)
+                    client.send(body)
+                    response=client.getresponse()
+                    self.assertEqual(response.status,403)
+                    response.read()
+                    drained.assert_called_once()
+                    self.assertTrue(drained.call_args.args[0]._request_body_consumed)
+                    control.assert_not_called()
+                    self.assertEqual(self.upstream.received,[])
+                finally:client.close()
 
     def test_core_health_identifies_control_center_without_authentication(self):
         with patch.object(self.b, 'status') as status:

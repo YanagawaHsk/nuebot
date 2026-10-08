@@ -172,7 +172,7 @@ class LocalModelWaitTests(unittest.TestCase):
         self.assertEqual(wait.retry_after, 3600)
         self.assertNotIn('private', repr(wait))
 
-    def test_mentions_and_chat_precede_moderation_topic_and_learning(self):
+    def test_moderation_precedes_mentions_chat_topic_and_learning(self):
         self.gate(blocked_until=time.time() + 60)
         order = []
         jobs = [(10, 'learning', 'learn'), (10, 'topic', 'topic'),
@@ -192,7 +192,7 @@ class LocalModelWaitTests(unittest.TestCase):
             self.gate(blocked_until=0)
             for future in futures:
                 future.result(timeout=10)
-        self.assertEqual(order, ['mention', 'chat-20', 'chat-10', 'moderate', 'topic', 'learn'])
+        self.assertEqual(order, ['moderate', 'mention', 'chat-20', 'chat-10', 'topic', 'learn'])
 
     def test_first_actual_start_uses_its_lease_without_a_second_interval(self):
         policy = {**self.policy, 'min_interval': 30, 'queue_timeout': 1}

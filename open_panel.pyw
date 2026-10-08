@@ -62,6 +62,8 @@ def main(argv=None):
     parser.add_argument('--mode',choices=('local','remote'),default='local')
     parser.add_argument('--remote',action='store_true',help='只打开已有隧道页面')
     parser.add_argument('--check',action='store_true',help='仅检查，不启动或打开网页')
+    parser.add_argument('--no-browser',action='store_true',help='启动并检查控制中心，不打开网页')
+    parser.add_argument('--section',choices=('overview','qq'),default='overview',help='打开指定控制室页面')
     args=parser.parse_args(argv);mode='remote' if args.remote else args.mode
     state=probe_service()
     if args.check:
@@ -83,6 +85,8 @@ def main(argv=None):
         elif mode=='remote':message='远程管理连接尚未就绪，请先运行统一远程快捷方式建立隧道。未启动本机服务。'
         else:message='控制中心尚未启动，请检查 panel-output.log 后重试。'
         notify(message,error=True);return 1
-    webbrowser.open(URL);return 0
+    if not args.no_browser:
+        webbrowser.open(URL+('#snowluma-tab' if args.section=='qq' else ''))
+    return 0
 
 if __name__=='__main__':raise SystemExit(main())

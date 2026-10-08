@@ -110,7 +110,9 @@ with patch.object(bot.time,'time',return_value=NOW),patch.object(bot.model_gate,
  assert bot.retry_batch(batch(),ValueError('Hourly model budget exhausted'))
  retry=list(bot.pending)[0]
  assert retry['retry_at']==NOW+75 and retry['model_attempts']==0 and retry['queue_waits']==1
- available.assert_called_once_with('model',bot.GROUP,bot.MAX_MODEL_CALLS_HOUR,bot.account_limit('model_calls_hour'))
+ reserve=bot.moderator.policy['reserved_model_calls_hour']
+ global_limit=bot.account_limit('model_calls_hour')
+ available.assert_called_once_with('model',bot.GROUP,max(1,bot.MAX_MODEL_CALLS_HOUR-reserve),None if global_limit is None else max(1,global_limit-reserve))
 ''')
 
     def test_failed_start_request_never_reserves_model_budget_or_opens_http(self):

@@ -73,5 +73,25 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(launcher.main(['--check']), 0)
             start.assert_not_called(); browser.assert_not_called(); notice.assert_not_called()
 
+    def test_qq_shortcut_opens_combined_console_section(self):
+        with mock.patch.object(launcher, 'probe_service', return_value={'state': 'ready'}), mock.patch.object(launcher.webbrowser, 'open') as browser:
+            self.assertEqual(launcher.main(['--section', 'qq']), 0)
+            browser.assert_called_once_with(launcher.URL+'#snowluma-tab')
+
+    def test_hidden_start_keeps_browser_closed(self):
+        with mock.patch.object(launcher, 'probe_service', side_effect=[{'state': 'absent'}, {'state': 'ready'}]), mock.patch.object(launcher, 'start_local_panel') as start, mock.patch.object(launcher.webbrowser, 'open') as browser:
+            self.assertEqual(launcher.main(['--no-browser']), 0)
+            start.assert_called_once(); browser.assert_not_called()
+
+    def test_remote_qq_shortcut_never_starts_local_services(self):
+        with mock.patch.object(launcher, 'probe_service', return_value={'state': 'ready'}), mock.patch.object(launcher, 'start_local_panel') as start, mock.patch.object(launcher.webbrowser, 'open') as browser:
+            self.assertEqual(launcher.main(['--remote', '--section', 'qq']), 0)
+            start.assert_not_called(); browser.assert_called_once_with(launcher.URL+'#snowluma-tab')
+
+    def test_remote_hidden_mode_still_refuses_missing_tunnel(self):
+        with mock.patch.object(launcher, 'probe_service', return_value={'state': 'absent'}), mock.patch.object(launcher, 'start_local_panel') as start, mock.patch.object(launcher.webbrowser, 'open') as browser, mock.patch.object(launcher, 'notify'):
+            self.assertEqual(launcher.main(['--remote', '--no-browser']), 1)
+            start.assert_not_called(); browser.assert_not_called()
+
 
 if __name__ == '__main__': unittest.main()

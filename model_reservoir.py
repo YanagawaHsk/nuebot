@@ -108,6 +108,10 @@ def reserve(key, input_tokens, output_tokens, policy, cancel=lambda: False,
     now = time.time()
     if deadline is not None and now >= deadline:
         raise model_gate.QueueExpired('ReplyExpired', reason='deadline', now=now)
+    # A lease may have been granted before a safety review arrived. Yield before
+    # debiting scarce budgets; start_request repeats the check atomically at the
+    # shared provider gate to cover work arriving after this preflight.
+    model_gate.yield_to_priority(key, policy, purpose=purpose, deadline=deadline)
     if not policy.get('reservoir_enabled', True): return None
     with db() as conn:
         conn.execute('BEGIN IMMEDIATE')

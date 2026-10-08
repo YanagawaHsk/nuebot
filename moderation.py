@@ -1,5 +1,6 @@
 """Prepared moderation planner. It has no network or punishment execution."""
 import json
+import math
 import time
 from pathlib import Path
 
@@ -18,7 +19,9 @@ class Moderator:
         if user_id in self.policy['protected_accounts'] or target_role in ('owner','admin'):return {'action':'ignore'}
         if verdict.get('category') in ('ordinary_politics','non_explicit_adult_fiction','consensual_light_teasing'):return {'action':'ignore'}
         if verdict.get('category') not in self.policy['allowed_categories']:return {'action':'ignore'}
-        if verdict.get('confidence',0)<self.policy['minimum_confidence'] or not verdict.get('direct_violation'):return {'action':'review'}
+        confidence=verdict.get('confidence',0)
+        if (type(confidence) not in (int,float) or not 0<=confidence<=1 or not math.isfinite(confidence)
+            or confidence<self.policy['minimum_confidence'] or not verdict.get('direct_violation')):return {'action':'review'}
         warnings=[w for w in self.state.get(str(user_id),[]) if w['at']>now-self.policy['warning_window_seconds']]
         if len(warnings)<self.policy['warnings_before_mute']:
             return {'action':'warn' if self.policy['warnings_enabled'] else 'propose_warning','warning_number':len(warnings)+1}

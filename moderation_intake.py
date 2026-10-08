@@ -133,6 +133,22 @@ class ModerationIntake:
         with self._lock:
             return len(self._queue)
 
+    def has_pending(self, message_ids=None, candidates_only=False):
+        """Read-only pending check, including deferred retries and this group only.
+
+        With no identifiers this reports any pending review. No raw queue data
+        is returned or newly retained. In-flight batches are owned by the review
+        worker, which must maintain its own barrier until adjudication finishes.
+        """
+        ids=None if message_ids is None else {str(ident) for ident in message_ids if ident is not None}
+        with self._lock:
+            return any((not candidates_only or row[0].get('intake_kind')=='candidate')
+                       and (ids is None or str(row[0].get('message_id')) in ids)
+                       for row in self._queue)
+
+    def is_pending(self, message_id, candidates_only=False):
+        return self.has_pending([message_id],candidates_only=candidates_only)
+
     def clear(self):
         """Cancel pending reviews, without resetting rate/dedup protections."""
         with self._lock:

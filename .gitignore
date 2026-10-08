@@ -24,6 +24,7 @@ chat-control.json
 shared-budget.json
 status.json
 last-*.json
+moderation-commands.json
 introduced
 STOP
 dist/

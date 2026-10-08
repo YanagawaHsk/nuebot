@@ -15,6 +15,34 @@ _QUEUE_RETRY_CEILING=5
 _QUEUE_RETRY_LIMIT=32
 _WAIT_REASONS={'ready','queued','capacity','cooldown','interval','deadline','background','reservoir','input_bucket','output_bucket'}
 _request_local=threading.local()
+# One ordering applies at admission, token reservation, and immediately before
+# HTTP. Background work stays below live conversation; safety review comes first.
+PRIORITIES={'moderation':0,'mention':1,'chat':2,'topic':3,'learning':4}
+
+def priority(purpose):return PRIORITIES.get(purpose,PRIORITIES['chat'])
+
+def _request_purpose(key,purpose=None):
+    lease=next((item for item in reversed(getattr(_request_local,'leases',[])) if item['key']==key),None)
+    return purpose or (lease['purpose'] if lease else 'chat')
+
+def _higher_priority(conn,key,purpose,now):
+    return bool(conn.execute('SELECT 1 FROM tickets WHERE service=? AND priority<? AND expires>? LIMIT 1',
+                             (key,priority(purpose),now)).fetchone())
+
+def _yield_priority(key,policy,deadline,now,conn,purpose):
+    if not _higher_priority(conn,key,purpose,now):return
+    # Releasing the caller's lease (and pre-HTTP reservations) is necessary when
+    # all slots are occupied. Waiting inside the lower-priority lease deadlocks
+    # a newly queued moderation request at max_concurrent=1.
+    hint=_expired(key,policy,deadline,now,conn,purpose=purpose)
+    if hint.code!='ReplyExpired' and hint.reason!='background':
+        hint=QueueExpired('ModelQueueTimeout',reason='queued',next_ready_at=hint.next_ready_at,now=now)
+    raise hint
+
+def yield_to_priority(key,policy,purpose=None,deadline=None):
+    """Pre-reservation priority check; cannot revoke or interrupt an HTTP call."""
+    purpose=_request_purpose(key,purpose)
+    with db() as conn:_yield_priority(key,policy,deadline,time.time(),conn,purpose)
 
 def _finite_time(value,default):
     if type(value) not in (int,float):return default
@@ -70,7 +98,7 @@ def _background_ready(conn,key,policy,now,purpose):
     if purpose not in ('learning','topic'):return now
     last=conn.execute('SELECT last_chat FROM gates WHERE service=?',(key,)).fetchone()
     ready=max(now,(last[0] if last else 0)+policy.get('background_idle_seconds',0))
-    chat=conn.execute('SELECT 1 FROM tickets WHERE service=? AND priority<=1 AND expires>? LIMIT 1',(key,now)).fetchone()
+    chat=conn.execute('SELECT 1 FROM tickets WHERE service=? AND priority<=? AND expires>? LIMIT 1',(key,PRIORITIES['chat'],now)).fetchone()
     return max(ready,now+_QUEUE_RETRY_FLOOR) if chat else ready
 
 def snapshot(key,policy=None):
@@ -179,8 +207,7 @@ def start_request(key,policy,cancel=lambda:False,deadline=None,notice=lambda pha
             conn.execute('INSERT OR IGNORE INTO gates(service,next_start,blocked_until,failures,last_group) VALUES(?,0,0,0,0)',(key,))
             actual_next,blocked_until,stored=conn.execute('SELECT actual_next,blocked_until,adaptive_interval FROM gates WHERE service=?',(key,)).fetchone()
             background=_background_ready(conn,key,policy,now,purpose)
-            if purpose in ('learning','topic') and conn.execute('SELECT 1 FROM tickets WHERE service=? AND priority<=1 AND expires>? LIMIT 1',(key,now)).fetchone():
-                raise _expired(key,policy,deadline,now,conn,purpose=purpose)
+            _yield_priority(key,policy,deadline,now,conn,purpose)
             if now<end and now>=max(actual_next,blocked_until,background):
                 conn.execute('UPDATE gates SET actual_next=?,last_chat=CASE WHEN ? THEN MAX(last_chat,?) ELSE last_chat END WHERE service=?',(now+_interval(stored,policy),purpose in ('chat','mention'),now,key))
                 reserved=True
@@ -201,14 +228,21 @@ def acquire(key,group,purpose,policy,cancel=lambda:False,deadline=None,notice=la
     if cancel():raise Cancelled('ReplySuperseded')
     now=time.time();end=min(now+policy['queue_timeout'],deadline if deadline is not None else now+policy['queue_timeout'])
     if now>=end:raise _expired(key,policy,deadline,now)
-    ident=uuid.uuid4().hex;priority={'mention':0,'chat':1,'moderation':2,'topic':3,'learning':4}.get(purpose,1)
+    ident=uuid.uuid4().hex;ticket_priority=priority(purpose)
     with db() as conn:
         conn.execute('BEGIN IMMEDIATE');now=time.time()
         if now>=end:raise _expired(key,policy,deadline,now,conn)
         conn.execute('DELETE FROM tickets WHERE expires<=?',(now,))
-        if conn.execute('SELECT COUNT(*) FROM tickets').fetchone()[0]>=100:raise _expired(key,policy,deadline,now,conn,full=True)
+        if conn.execute('SELECT COUNT(*) FROM tickets').fetchone()[0]>=100:
+            # A full backlog of conversation must not exclude safety review.
+            # Only an unleased lower-priority waiter may be displaced; its
+            # caller requeues the original work and has reserved no budgets.
+            victim=conn.execute('SELECT id FROM tickets WHERE service=? AND started=0 AND priority>? ORDER BY priority DESC,rowid DESC LIMIT 1',
+                                (key,ticket_priority)).fetchone() if purpose=='moderation' else None
+            if victim:conn.execute('DELETE FROM tickets WHERE id=? AND started=0',(victim[0],))
+            else:raise _expired(key,policy,deadline,now,conn,full=True)
         conn.execute('INSERT OR IGNORE INTO gates(service,next_start,blocked_until,failures,last_group) VALUES(?,0,0,0,0)',(key,))
-        conn.execute('INSERT INTO tickets VALUES(?,?,?,?,?,?,0)',(ident,key,int(group),priority,now,end))
+        conn.execute('INSERT INTO tickets VALUES(?,?,?,?,?,?,0)',(ident,key,int(group),ticket_priority,now,end))
         if purpose in ('chat','mention'):conn.execute('UPDATE gates SET last_chat=MAX(last_chat,?) WHERE service=?',(now,key))
     acquired=False;stop=threading.Event();keeper=None
     try:
@@ -218,6 +252,8 @@ def acquire(key,group,purpose,policy,cancel=lambda:False,deadline=None,notice=la
             with db() as conn:
                 conn.execute('BEGIN IMMEDIATE');now=time.time()
                 conn.execute('DELETE FROM tickets WHERE expires<=?',(now,))
+                if not conn.execute('SELECT 1 FROM tickets WHERE id=?',(ident,)).fetchone():
+                    raise _expired(key,policy,deadline,now,conn,purpose=purpose)
                 gate=conn.execute('SELECT next_start,blocked_until,last_group,adaptive_interval FROM gates WHERE service=?',(key,)).fetchone()
                 background=_background_ready(conn,key,policy,now,purpose)
                 active=conn.execute('SELECT COUNT(*) FROM tickets WHERE service=? AND started>0',(key,)).fetchone()[0]

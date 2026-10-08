@@ -52,12 +52,15 @@ class DeliverySettlementIntegrationTests(unittest.TestCase):
                   'reload_settings':lambda:None,'reject_outgoing':lambda text:False,'valid_reply':lambda meta:True,
                   'account_limit':lambda kind:60,'ob':self.ob,'DeliveryRejected':type('DeliveryRejected',(ValueError,),{}),
                   'shared_budget':budget,'delivery_queue':queue,'error_log':error_log,
+                  'MAX_MODEL_CALLS_HOUR':60,'moderator':types.SimpleNamespace(policy={'enabled':False,'manual_enabled':False}),
+                  'moderation_busy':threading.Event(),'owner_moderation_busy':threading.Event(),'owner_moderation_pending':[],
+                  'moderation_pending':types.SimpleNamespace(has_pending=lambda:False),
                   'chat_control':types.SimpleNamespace(paused=lambda *args:False),
                   'flow':flow,
                   'memory_learning':types.SimpleNamespace(config=lambda *args:{'enabled':False}),
                   'record':lambda event,**data:self.records.append((event,data)),
                   'reply_event':lambda stage,reason,**data:self.events.append((stage,reason,data))}
-        functions('bot.py',{'dispatch','_dispatch'},self.bot)
+        functions('bot.py',{'dispatch','_dispatch','moderation_budget','moderation_waiting'},self.bot)
         self.panel={'json':json,'time':time,'ROOT':self.root,'BOT_ID':100000001,'shared_budget':budget,'error_log':error_log,
                     'delivery_queue':queue,'plugin_features':plugins,
                     'group_workers':types.SimpleNamespace(directory=lambda gid:self.root/'group-workers'/str(gid),locked=lambda path:False),

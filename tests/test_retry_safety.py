@@ -54,6 +54,41 @@ class RetrySafetyTests(unittest.TestCase):
             self.create(reason=reason)
         self.now=200;self.assertIsNone(queue.claim(10001,POLICY))
 
+    def test_moderation_deferral_recovers_original_unopened_output(self):
+        ident=queue.create(10001,[{'type':'text','data':{'text':'待发送'}}],'待发送','text','OutputQueued',
+                           meta={'topic':'topic-a','revision':1,'expires':1000,'output_queued':True},queued=True)
+        self.assertEqual(queue.claim(10001,POLICY)['id'],ident)
+        queue.mark(10001,ident,'unsent','ModerationPriority')
+        self.assertEqual(queue.get(10001,ident)['attempts'],0)
+        self.now=104.99;self.assertIsNone(queue.claim(10001,POLICY))
+        self.now=105;restored=queue.claim(10001,POLICY,valid=lambda meta:meta['revision']==1)
+        self.assertEqual(restored['id'],ident)
+        self.assertEqual(restored['segments'],[{'type':'text','data':{'text':'待发送'}}])
+        self.assertEqual(restored['attempts'],0)
+        self.assertEqual(restored['meta']['auto_attempts'],1)
+
+    def test_moderation_deferral_cannot_restore_expired_output(self):
+        ident=self.create(reason='ModerationPriority',expires=104)
+        self.now=105;self.assertIsNone(queue.claim(10001,POLICY))
+        self.assertEqual(queue.get(10001,ident)['state'],'expired')
+        with self.assertRaises(ValueError):queue.schedule(10001,ident,True)
+        with self.assertRaises(ValueError):queue.get(10001,ident,payload=True)
+
+    def test_moderation_deferral_cannot_restore_superseded_topic(self):
+        ident=self.create(reason='ModerationPriority')
+        self.now=105
+        self.assertIsNone(queue.claim(10001,POLICY,valid=lambda meta:meta['revision']==2))
+        self.assertEqual(queue.get(10001,ident)['state'],'expired')
+
+    def test_moderation_reason_never_makes_unknown_result_retryable(self):
+        uncertain=self.create(expires=104)
+        queue.mark(10001,uncertain,'pending');queue.mark(10001,uncertain,'unknown','ModerationPriority')
+        deferred=self.create(reason='ModerationPriority')
+        self.now=105;self.assertIsNone(queue.claim(10001,POLICY))
+        self.assertEqual(queue.get(10001,uncertain)['state'],'unknown')
+        self.assertEqual(queue.get(10001,deferred)['state'],'unsent')
+        with self.assertRaises(ValueError):queue.schedule(10001,uncertain)
+
     def test_automatic_retry_needs_topic_and_current_revision(self):
         no_topic=self.create(topic='');stale=self.create(revision=1)
         self.now=105

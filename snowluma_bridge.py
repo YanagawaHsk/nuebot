@@ -17,6 +17,7 @@ from http.cookies import CookieError, SimpleCookie
 from urllib.parse import unquote, urlsplit
 
 import panel_endpoint
+import http_body
 BRIDGE_PORT = panel_endpoint.BRIDGE_PORT
 BRIDGE_HOST = f'127.0.0.1:{BRIDGE_PORT}'
 BRIDGE_ORIGIN = panel_endpoint.BRIDGE_ORIGIN
@@ -325,6 +326,7 @@ def _script(state, nonce):
 
 
 def _error(handler, code, state='forbidden', api=False, message=None):
+    http_body.drain_rejected_post(handler)
     messages = {'login_required': '请先登录主管理员账号。',
                 'forbidden': '此页面仅允许主管理员访问。',
                 'offline': 'SnowLuma 当前不可用，请在托管机本地检查服务。'}
@@ -349,6 +351,7 @@ def _body(handler):
     if len(lengths) > 1:
         raise ValueError('body')
     if not lengths:
+        handler._request_body_consumed=True
         return b''
     if not lengths[0].isascii() or not lengths[0].isdigit():
         raise ValueError('body')
@@ -359,6 +362,7 @@ def _body(handler):
     try:
         handler.connection.settimeout(RESPONSE_TIMEOUT)
         data = handler.rfile.read(length)
+        handler._request_body_consumed=True
     finally:
         handler.connection.settimeout(timeout)
     if len(data) != length:

@@ -33,6 +33,7 @@ import ai_guard
 import reply_retry
 import model_output
 import moderation_intake
+import moderation_control
 import model_input
 import model_diagnostics
 import model_reservoir
@@ -76,6 +77,11 @@ learning_windows=memory_learning.Windows(memory_learning.config(SETTINGS,GROUP))
 security_counts=ai_guard.Counters()
 bot_role = "unknown"
 last_moderation_check = 0.0
+moderation_busy = threading.Event()
+owner_moderation_busy = threading.Event()
+moderation_action_lock = threading.RLock()
+owner_moderation_pending = collections.deque(maxlen=20)
+owner_moderation_ledger = moderation_control.Ledger(ROOT/'moderation-commands.json')
 seen = collections.deque(maxlen=1000)
 sent_times, model_times = collections.deque(), collections.deque()
 sticker_times = collections.deque()
@@ -138,6 +144,10 @@ def status(state, **fields):
     except Exception:value['token_reservoir']={}
     value['learning']={**learning_windows.snapshot(),**{k:memory_learning.config(SETTINGS,GROUP)[k] for k in ('enabled','auto_apply')}}
     value['moderation_intake']=moderation_pending.snapshot()
+    value['moderation_control']={'manual_enabled':moderator.policy.get('manual_enabled',True),'owner_id':OWNER,
+        'pending_commands':len(owner_moderation_pending),'processing':moderation_busy.is_set() or owner_moderation_busy.is_set(),'priority':'moderation_first',
+        'warnings_enabled':moderator.policy['warnings_enabled'],'punishments_enabled':moderator.policy['punishments_enabled'],
+        'reserved_messages_hour':moderator.policy.get('reserved_messages_hour',6),'reserved_model_calls_hour':moderator.policy.get('reserved_model_calls_hour',12)}
     try:value['output_queue']=delivery_queue.snapshot(GROUP)
     except Exception:value['output_queue']={}
     # A dashboard read must never stop the chat worker on Windows.
@@ -216,6 +226,8 @@ def account_exhausted():
 
 def post(url, body, token, timeout=None,purpose='chat'):
     is_model=url.endswith('/chat/completions')
+    if is_model and purpose!='moderation' and moderation_waiting():
+        raise model_gate.QueueExpired(reason='queued',next_ready_at=time.time()+1)
     if 'thinking' in body and not SETTINGS['connection']['disable_thinking']:body.pop('thinking',None)
     if is_model:
         for message in body.get('messages',[]):
@@ -224,8 +236,10 @@ def post(url, body, token, timeout=None,purpose='chat'):
     def request():
         req=urllib.request.Request(url,data=json.dumps(body,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
         if is_model:
+            if purpose!='moderation' and moderation_waiting():
+                raise model_gate.QueueExpired(reason='queued',next_ready_at=time.time()+1)
             model_gate.start_request(MODEL_SERVICE,SETTINGS['model_control'],cancel,meta.get('expires') if meta else None,notice)
-            reservation=shared_budget.reserve_model(MAX_MODEL_CALLS_HOUR,GROUP,account_limit('model_calls_hour'))
+            reservation=shared_budget.reserve_model(moderation_budget('model',purpose),GROUP,moderation_budget('model',purpose,global_limit=True))
             if reservation is None:raise ValueError('Hourly model budget exhausted')
             if cancel():
                 try:shared_budget.refund_model(reservation)
@@ -309,7 +323,10 @@ def ob(action, body):
     if action not in allowed:raise ValueError('Action not allowed')
     if action!='get_login_info' and body.get('group_id')!=GROUP:raise ValueError('Group not allowed')
     if action=='set_group_ban':
-        if not moderator.policy['punishments_enabled'] or body.get('duration')!=moderator.policy['individual_mute_seconds'] or body.get('user_id') in moderator.policy['protected_accounts']:raise ValueError('Punishment outside policy')
+        manual=getattr(reply_local,'moderation_owner',None)==OWNER and moderator.policy.get('manual_enabled',True)
+        if (body.get('user_id') in {*moderator.policy['protected_accounts'],OWNER,BOT} or type(body.get('duration')) is not int
+            or body['duration'] not in ((0,moderator.policy['individual_mute_seconds']) if manual else (moderator.policy['individual_mute_seconds'],))
+            or not manual and not moderator.policy['punishments_enabled']):raise ValueError('Punishment outside policy')
     result=post('http://127.0.0.1:3000/'+action,body,HTTP['accessToken'])
     if result.get('status')=='failed' and result.get('retcode')!=0:raise DeliveryRejected('OneBot rejected action')
     if result.get('status')!='ok' or result.get('retcode')!=0:raise ValueError('OneBot action result unconfirmed')
@@ -353,7 +370,8 @@ def receive(event, history=False):
         paused=chat_control.paused(runtime,GROUP)
         challenge=runtime['challenge_filter'] and is_challenge(text)
         rejection=ai_guard.rejection(ai_guard.policy(SETTINGS)) if blocked else None
-        owner_control=uid==OWNER and (text.strip() in ('/鵺停止','鵺停止','/nue stop') or
+        manual_command=moderation_control.parse(event,OWNER,BOT,GROUP) if not history else None
+        owner_control=bool(manual_command) or uid==OWNER and (text.strip() in ('/鵺停止','鵺停止','/nue stop') or
             re.fullmatch(r'/鵺(?:继续|安静(?:\s*\d{1,4})?)',text.replace('@鵺','').strip()))
         actionable=not history and uid!=BOT and not paused and not owner_control and (
             bool(rejection) if blocked else not challenge)
@@ -387,10 +405,13 @@ def receive(event, history=False):
             flow.remember(ident,topic_id,stamp,turn,partition=original.get('partition',flow.message_partition({'topic':topic_id})))
         partition=flow.message_partition({'id':ident,'topic':topic_id,'turn':turn})
         context.append({'speaker':label,'text':text,'time':stamp,'_message_id':ident,'_source_id':source_id,'_user_id':uid,'_security_blocked':blocked,'_topic':topic_id,'_partition':partition})
-        if (uid!=BOT or history) and memory_learning.config(SETTINGS,GROUP)['enabled']:
+        if not owner_control and (uid!=BOT or history) and memory_learning.config(SETTINGS,GROUP)['enabled']:
             learning_windows.observe({'id':ident,'speaker':label,'text':'[已隔离越权指令]' if blocked else text,'_user_id':str(uid)})
         if history or uid==BOT:return
         if stale:reply_event('expired','StaleIncomingMessage',mentioned=mentioned);return
+        if manual_command:
+            if len(owner_moderation_pending)>=owner_moderation_pending.maxlen:record('moderation_command_queue_full');return
+            owner_moderation_pending.append({**manual_command,'received_at':stamp});record('moderation_command_queued',action=manual_command['action']);return
         if uid==OWNER and text.strip() in ('/鵺停止','鵺停止','/nue stop'):
             HALT.write_text('Stopped by owner',encoding='utf-8');record('owner_stop');reply_event('skipped','OwnerControl');return
         if uid==OWNER:
@@ -583,7 +604,8 @@ def dispatch(segments,summary,kind,delivery_id=None,feature=None,plugin_receipt=
     try:
         if delivery_id is None:delivery_id=delivery_queue.create(GROUP,segments,summary,kind,'MessageLimit',feature,getattr(reply_local,'meta',None),plugin_receipt)
         reply_local.delivery_id=delivery_id
-        sent=shared_budget.send(MAX_MESSAGES_HOUR,lambda:_dispatch(segments,summary,kind,delivery_id),GROUP,account_limit('messages_hour'),delivery_id=delivery_id)
+        purpose='moderation' if kind=='warning' else 'chat'
+        sent=shared_budget.send(moderation_budget('message',purpose),lambda:_dispatch(segments,summary,kind,delivery_id),GROUP,moderation_budget('message',purpose,global_limit=True),delivery_id=delivery_id)
         if not sent and delivery_id and delivery_queue.get(GROUP,delivery_id)['state']=='preparing':delivery_queue.mark(GROUP,delivery_id,'unsent','MessageLimit')
         return sent
     except Exception as exc:
@@ -618,6 +640,7 @@ def queue_unsent(parts,sticker=None,reason='EarlierMessageUnsent',start_index=0)
     except Exception as exc:record('delivery_queue_error',**error_log.fields(exc))
 
 def process_resend():
+    if moderation_waiting():return False
     job=delivery_queue.claim(GROUP,SETTINGS['runtime'],valid_reply,send_not_before=last_send+REPLY_COOLDOWN_SECONDS)
     if not job:return False
     reason=None
@@ -649,6 +672,8 @@ def _dispatch(segments,summary,kind,delivery_id=None):
     reason='Stopped' if HALT.exists() or runner_done.is_set() else 'GroupDisabled' if not any(g['group_id']==GROUP and g['enabled'] for g in SETTINGS['groups']) else 'Disconnected' if not connected.is_set() else 'MessageLimit' if len(sent_times)>=MAX_MESSAGES_HOUR else 'QuietMode' if kind in ('text','sticker','plugin') and chat_control.paused(SETTINGS['runtime'],GROUP) else 'MentionOnly' if kind in ('text','sticker','plugin') and SETTINGS['runtime'].get('mention_only') and not (meta or {}).get('mentioned') else 'PluginDisabled' if kind=='plugin' and not plugin_features.enabled(SETTINGS['plugins'],row.get('feature')) else 'StickerDisabled' if kind=='sticker' and not SETTINGS['runtime']['stickers_enabled'] else None
     if reason:
         delivery_queue.mark(GROUP,delivery_id,'unsent',reason);return False
+    if kind!='warning' and moderation_waiting():
+        delivery_queue.mark(GROUP,delivery_id,'unsent','ModerationPriority');return False
     if kind=='plugin' and not SETTINGS['plugins']['images_enabled']:segments=[s for s in segments if s.get('type')!='image']
     # Persist before sending; ambiguous results require explicit reconciliation.
     delivery_queue.mark(GROUP,delivery_id,'pending')
@@ -684,7 +709,7 @@ def _dispatch(segments,summary,kind,delivery_id=None):
                 event['_topic']=(meta or {}).get('topic',flow.current)
                 event['_partition']=(meta or {}).get('partition',flow.message_partition({'topic':event['_topic']}))
         flow.remember(mid,(meta or {}).get('topic',flow.current),last_send,(meta or {}).get('turn'))
-        if memory_learning.config(SETTINGS,GROUP)['enabled']:
+        if kind!='warning' and memory_learning.config(SETTINGS,GROUP)['enabled']:
             learning_windows.observe({'id':mid,'speaker':'鵺机器人','text':summary,'_user_id':str(BOT)},anchor=True)
     return True
 
@@ -897,17 +922,108 @@ def classify_moderation(items):
     result=post(MODEL['base_url'].rstrip('/')+'/chat/completions',{'model':MODEL['model'],'messages':[{'role':'system','content':rules+'\n'+ai_guard.REVIEW},{'role':'user','content':json.dumps(data,ensure_ascii=False)}],'max_tokens':OUTPUT_TOKENS,'temperature':0,'response_format':{'type':'json_object'},'thinking':{'type':'disabled'}},MODEL['api_key'],purpose='moderation')
     verdicts=json.loads(model_output.content(result)).get('violations',[])
     if not isinstance(verdicts,list) or len(verdicts)>2:raise ValueError('Invalid moderation verdict')
-    return [v for v in verdicts if isinstance(v,dict) and type(v.get('index')) is int and v['index'] in targets and type(v.get('confidence')) in (int,float) and v.get('direct_violation') is True],window
+    return [v for v in verdicts if isinstance(v,dict) and type(v.get('index')) is int and v['index'] in targets
+            and type(v.get('confidence')) in (int,float) and 0<=v['confidence']<=1 and math.isfinite(v['confidence'])
+            and v.get('direct_violation') is True],window
+
+def moderation_waiting():
+    return bool(owner_moderation_pending or owner_moderation_busy.is_set() or moderation_busy.is_set()
+                or moderator.policy['enabled'] and moderation_pending.has_pending())
+
+def moderation_budget(kind,purpose='chat',global_limit=False):
+    key='messages_hour' if kind=='message' else 'model_calls_hour'
+    limit=account_limit(key) if global_limit else MAX_MESSAGES_HOUR if kind=='message' else MAX_MODEL_CALLS_HOUR
+    if limit is None or purpose=='moderation':return limit
+    if not moderator.policy['enabled'] and not moderator.policy.get('manual_enabled',True):return limit
+    reserved=moderator.policy.get('reserved_'+key,6 if kind=='message' else 12)
+    return limit-min(reserved,max(0,limit-1))
+
+def owner_moderation_feedback(text):
+    reply_local.meta={'manual':True,'expires':time.time()+30}
+    try:return dispatch([{'type':'text','data':{'text':text}}],text,'warning')
+    finally:reply_local.meta=None
+
+def verified_moderation_member(uid):
+    member=ob('get_group_member_info',{'group_id':GROUP,'user_id':uid,'no_cache':True})
+    if not isinstance(member,dict) or member.get('group_id')!=GROUP or member.get('user_id')!=uid:
+        raise ValueError('Moderation member identity mismatch')
+    return member
+
+def process_owner_moderation():
+    with lock:
+        if not owner_moderation_pending:return False
+        owner_moderation_busy.set();command=owner_moderation_pending.popleft()
+    started=False;network_started=False
+    try:
+        if (command.get('owner_id')!=OWNER or command.get('group_id')!=GROUP
+            or HALT.exists() or not connected.is_set() or runner_done.is_set()
+            or not any(g['group_id']==GROUP and g['enabled'] for g in SETTINGS['groups'])
+            or time.time()-command['received_at']>60):return False
+        if not moderator.policy.get('manual_enabled',True):
+            record('moderation_command_disabled');return False
+        if not owner_moderation_ledger.begin(command):return False
+        started=True;action=command['action'];uid=command.get('target')
+        if action in ('help','invalid'):
+            owner_moderation_feedback('主人可以发 /天网警告、/天网禁言、/天网解禁，并且只@一位群友；也可以发 /天网状态，当前不执行全群禁言')
+        elif action=='status':
+            role={'admin':'管理员','owner':'群主','member':'普通成员'}.get(bot_role,'待核验')
+            owner_moderation_feedback('天网自动审核'+('开启' if moderator.policy['enabled'] else '关闭')+'，手动指挥开启，当前群权限是'+role+'，禁言前会再次核验权限')
+        elif action in ('warn','mute','unmute'):
+            if uid in {*moderator.policy['protected_accounts'],OWNER,BOT}:
+                owner_moderation_feedback('这位在保护名单里，不能对她下这个指令');owner_moderation_ledger.finish(command,'failed');return False
+            with moderation_action_lock:
+                member=verified_moderation_member(uid)
+                role=verified_moderation_member(BOT).get('role','unknown')
+                if member.get('role')!='member' or action!='warn' and role not in ('admin','owner'):
+                    owner_moderation_feedback('当前权限或目标身份不允许执行，群主和管理员也不能作为目标');owner_moderation_ledger.finish(command,'failed');return False
+                if HALT.exists() or not connected.is_set():owner_moderation_ledger.finish(command,'failed');return False
+                if action=='warn':
+                    phrase='主人让我提醒你收一点，这句越界了'
+                    reply_local.meta={'manual':True,'expires':time.time()+30}
+                    try:sent=dispatch([{'type':'at','data':{'qq':str(uid)}},{'type':'text','data':{'text':' '+phrase}}],'@群友 '+phrase,'warning')
+                    finally:reply_local.meta=None
+                    if not sent:
+                        owner_moderation_ledger.finish(command,'unknown' if HALT.exists() else 'failed');return False
+                    moderator.record_confirmed_warning(uid,command['message_id'])
+                else:
+                    duration=moderator.policy['individual_mute_seconds'] if action=='mute' else 0
+                    intent={'state':'PENDING','group':GROUP,'user_id':uid,'message_id':command['message_id'],'duration':duration,'manual':True,'action':action}
+                    path=ROOT/'last-moderation.json';path.write_text(json.dumps(intent),encoding='utf-8')
+                    reply_local.moderation_owner=OWNER
+                    try:
+                        network_started=True;ob('set_group_ban',{'group_id':GROUP,'user_id':uid,'duration':duration})
+                    except DeliveryRejected:
+                        network_started=False;intent['state']='FAILED';path.write_text(json.dumps(intent),encoding='utf-8');raise
+                    finally:reply_local.moderation_owner=None
+                    intent['state']='CONFIRMED';path.write_text(json.dumps(intent),encoding='utf-8')
+                    moderator.clear_after_confirmed_mute(uid)
+        else:owner_moderation_ledger.finish(command,'failed');return False
+        owner_moderation_ledger.finish(command,'confirmed')
+        record('moderation_owner_command',action=action,user_id=uid);return True
+    except Exception as exc:
+        if network_started:
+            try:
+                intent['state']='UNKNOWN';path.write_text(json.dumps(intent),encoding='utf-8')
+            finally:HALT.write_text('Unknown owner moderation result; inspect QQ before restarting',encoding='utf-8')
+        if started:
+            try:owner_moderation_ledger.finish(command,'unknown' if network_started else 'failed')
+            except Exception:HALT.write_text('Owner moderation ledger requires review',encoding='utf-8')
+        record('moderation_command_error',**error_log.fields(exc));return False
+    finally:owner_moderation_busy.clear()
 
 def apply_moderation(item,verdict):
+    with moderation_action_lock:return _apply_moderation(item,verdict)
+
+def _apply_moderation(item,verdict):
     global bot_role
-    if HALT.exists() or not connected.is_set() or time.time()-item['received_at']>120:return False
+    if (HALT.exists() or not connected.is_set() or time.time()-item['received_at']>120
+        or not moderator.policy['enabled'] or not any(g['group_id']==GROUP and g['enabled'] for g in SETTINGS['groups'])):return False
     uid=item['user_id']
     warnings=moderator.state.get(str(uid),[])
     # Messages already in flight before the last warning cannot escalate punishment.
     if warnings and item['received_at']<=max(w['at'] for w in warnings):return False
-    member=ob('get_group_member_info',{'group_id':GROUP,'user_id':uid,'no_cache':True})
-    bot_role=ob('get_group_member_info',{'group_id':GROUP,'user_id':BOT,'no_cache':True}).get('role','unknown')
+    member=verified_moderation_member(uid)
+    bot_role=verified_moderation_member(BOT).get('role','unknown')
     action=moderator.plan(uid,verdict,bot_role=bot_role,target_role=member.get('role','unknown'))
     if member.get('role') not in ('member','admin','owner'):return False
     if action['action']=='warn':
@@ -920,7 +1036,8 @@ def apply_moderation(item,verdict):
             record('moderation_warning',user_id=uid,message_id=item['message_id'],number=action['warning_number'],category=verdict['category'])
             return True
     elif action['action']=='individual_mute':
-        if HALT.exists() or not connected.is_set():return False
+        if (HALT.exists() or not connected.is_set() or not moderator.policy['enabled']
+            or not any(g['group_id']==GROUP and g['enabled'] for g in SETTINGS['groups'])):return False
         intent={'state':'PENDING','group':GROUP,'user_id':uid,'message_id':item['message_id'],'duration':moderator.policy['individual_mute_seconds']}
         target=ROOT/'last-moderation.json';target.write_text(json.dumps(intent),encoding='utf-8')
         try:ob('set_group_ban',{'group_id':GROUP,'user_id':uid,'duration':moderator.policy['individual_mute_seconds']})
@@ -936,15 +1053,19 @@ def apply_moderation(item,verdict):
 def process_moderation():
     global last_moderation_check
     if not moderator.policy['enabled'] or time.time()-last_moderation_check<10 or len(model_times)>=MAX_MODEL_CALLS_HOUR:return False
-    with lock:items=moderation_pending.take_batch(limit=CONTEXT_MESSAGES)
+    with lock:
+        items=moderation_pending.take_batch(limit=CONTEXT_MESSAGES)
+        if items:moderation_busy.set()
     items=[i for i in items if time.time()-i['received_at']<120]
-    if not items:return False
+    if not items:moderation_busy.clear();return False
     last_moderation_check=time.time()
+    acted=False
+    moderation_busy.set()
     try:
         verdicts,window=classify_moderation(items)
         for v in verdicts:
             item=next((i for i in items if i['message_id']==window[v['index']]['id']),None)
-            if item and apply_moderation(item,v):return True
+            if item:acted=apply_moderation(item,v) or acted
     except Exception as exc:
         local_wait=isinstance(exc,model_gate.QueueExpired) or str(exc)=='Hourly model budget exhausted'
         failure=error_log.fields(exc)
@@ -962,7 +1083,8 @@ def process_moderation():
                 if kept:
                     moderation_pending.restore_batch(kept,not_before=ready)
                     record('moderation_retry',**failure,wait_seconds=round(ready-time.time()),purpose='moderation')
-    return False
+    finally:moderation_busy.clear()
+    return acted
 
 def verify():
     global bot_role
@@ -984,9 +1106,19 @@ def heartbeat():
 def moderation_loop():
     while not runner_done.is_set() and not HALT.exists():
         try:
-            if connected.is_set():process_moderation()
+            if connected.is_set():
+                reload_settings()
+                process_moderation()
         except Exception as exc:record('moderation_error',**error_log.fields(exc))
         runner_done.wait(1)
+
+def owner_moderation_loop():
+    while not runner_done.is_set() and not HALT.exists():
+        try:
+            reload_settings()
+            if connected.is_set():process_owner_moderation()
+        except Exception as exc:record('moderation_command_error',**error_log.fields(exc))
+        runner_done.wait(.2)
 
 def valid_reply(meta):
     if not memory_current(meta):return False
@@ -1036,7 +1168,7 @@ def retry_batch(batch,exc):
             reply_event('expired','TopicPartitionExpired',count=len(batch));return False
     if isinstance(exc,model_gate.Cancelled):return bool(restore_superseded(batch))
     ready=model_gate.next_ready(MODEL_SERVICE,SETTINGS['model_control'])['retry_at']
-    budget_ready=time.time()+shared_budget.next_available('model',GROUP,MAX_MODEL_CALLS_HOUR,account_limit('model_calls_hour')) if str(exc)=='Hourly model budget exhausted' else 0
+    budget_ready=time.time()+shared_budget.next_available('model',GROUP,moderation_budget('model'),moderation_budget('model',global_limit=True)) if str(exc)=='Hourly model budget exhausted' else 0
     plan=reply_retry.plan(batch,exc,runtime,request_started=getattr(reply_local,'request_started',False),next_ready=ready,budget_ready=budget_ready)
     if not plan['retry']:
         if plan['expired']:
@@ -1076,8 +1208,10 @@ def run_conversation():
                 if pending:reply_event('skipped','QuietMode',count=len(pending));pending.clear()
             conversation_phase('quiet');time.sleep(.5);continue
         if not connected.is_set():conversation_phase('connection');time.sleep(.5);continue
+        if moderation_waiting():conversation_phase('moderation_wait');time.sleep(.25);continue
         if delivery_queue.snapshot(GROUP)['queued']>=20:conversation_phase('output_wait');time.sleep(.5);continue
-        if (account_limit('messages_hour') is not None and shared_budget.count('message')>=account_limit('messages_hour')) or shared_budget.count('message',GROUP)>=MAX_MESSAGES_HOUR:
+        normal_global=moderation_budget('message',global_limit=True)
+        if (normal_global is not None and shared_budget.count('message')>=normal_global) or shared_budget.count('message',GROUP)>=moderation_budget('message'):
             conversation_phase('budget');time.sleep(1);continue
         with lock:
             if runtime.get('mention_only'):
@@ -1193,6 +1327,7 @@ def main():
     record('runner_started');status('running',websocket=True)
     threading.Thread(target=learning_loop,daemon=True,name='memory-learning').start()
     threading.Thread(target=moderation_loop,daemon=True,name='moderation').start()
+    threading.Thread(target=owner_moderation_loop,daemon=True,name='owner-moderation').start()
     threading.Thread(target=output_loop,daemon=True,name='output').start()
     threading.Thread(target=heartbeat,daemon=True,name='heartbeat').start()
     if not (ROOT/'introduced').exists():
