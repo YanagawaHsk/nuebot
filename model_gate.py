@@ -5,16 +5,8 @@ from pathlib import Path
 from email.utils import parsedate_to_datetime
 import model_diagnostics
 ROOT=Path(__file__).resolve().parent
-DEFAULT={'max_concurrent':1,'min_interval':2,'queue_timeout':25,'request_timeout':30,
-         'adaptive_enabled':True,'adaptive_max_interval':60,'recover_successes':3,'background_idle_seconds':20,
-         'input_budget_chars':16000,'input_message_chars':1000,'learned_style_chars':2500,'sticker_limit':12,
-         'reservoir_enabled':True,'input_capacity_tokens':60000,'input_refill_tokens_per_minute':60000,
-         'output_capacity_tokens':6000,'output_refill_tokens_per_minute':6000}
-RANGES={'max_concurrent':(1,4),'min_interval':(1,30),'queue_timeout':(5,120),'request_timeout':(5,90),
-        'adaptive_max_interval':(1,300),'recover_successes':(1,20),'background_idle_seconds':(0,300),
-        'input_budget_chars':(2000,64000),'input_message_chars':(100,8000),'learned_style_chars':(0,12000),'sticker_limit':(0,100),
-        'input_capacity_tokens':(1,10000000),'input_refill_tokens_per_minute':(1,10000000),
-        'output_capacity_tokens':(1,10000000),'output_refill_tokens_per_minute':(1,10000000)}
+DEFAULT={'max_concurrent': 1, 'min_interval': 2, 'queue_timeout': 25, 'request_timeout': 30, 'adaptive_enabled': True, 'adaptive_max_interval': 60, 'recover_successes': 3, 'background_idle_seconds': 20, 'input_budget_chars': 16000, 'input_message_chars': 1000, 'learned_style_chars': 2500, 'sticker_limit': 12, 'reservoir_enabled': True, 'input_capacity_tokens': 60000, 'input_refill_tokens_per_minute': 60000, 'output_capacity_tokens': 6000, 'output_refill_tokens_per_minute': 6000, 'member_memory_chars': 3500}
+RANGES={'max_concurrent': (1, 4), 'min_interval': (1, 30), 'queue_timeout': (5, 120), 'request_timeout': (5, 90), 'adaptive_max_interval': (1, 300), 'recover_successes': (1, 20), 'background_idle_seconds': (0, 300), 'input_budget_chars': (2000, 64000), 'input_message_chars': (100, 8000), 'learned_style_chars': (0, 12000), 'sticker_limit': (0, 100), 'input_capacity_tokens': (1, 10000000), 'input_refill_tokens_per_minute': (1, 10000000), 'output_capacity_tokens': (1, 10000000), 'output_refill_tokens_per_minute': (1, 10000000), 'member_memory_chars': (0, 12000)}
 _POLL_INTERVAL=.1
 _HEARTBEAT_INTERVAL=5
 _LEASE_GRACE=15

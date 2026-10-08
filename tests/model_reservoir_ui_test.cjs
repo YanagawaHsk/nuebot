@@ -90,12 +90,12 @@ const input = key => controls.find(el => el.dataset.modelControl === key);
 const text = id => ids.get(id).textContent;
 context.ensureGroupConfig();
 context.renderModelControl();
-assert.equal(controls.length, 17, 'Every model_control setting must have one control');
 const backend = fs.readFileSync(path.join(__dirname, '..', 'model_gate.py'), 'utf8');
 const backendDefaults = JSON.parse(backend.match(/DEFAULT=(\{[\s\S]*?\})/)[1]
   .replaceAll("'", '"').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false'));
+assert.equal(controls.length, Object.keys(backendDefaults).length, 'Every model_control setting must have one control');
 assert.deepEqual(plain(context.config.model_control), backendDefaults, 'Panel defaults must match backend authority');
-const backendRanges = [...backend.match(/RANGES=(\{[\s\S]*?\})/)[1].matchAll(/'([a-z_]+)':\((\d+),(\d+)\)/g)];
+const backendRanges = [...backend.match(/RANGES=(\{[\s\S]*?\})/)[1].matchAll(/'([a-z_]+)'\s*:\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/g)];
 assert.equal(backendRanges.length, controls.filter(el => el.type === 'number').length);
 for (const [, key, low, high] of backendRanges) {
   assert.equal(Number(input(key).min), Number(low), 'Backend minimum for ' + key);
@@ -104,7 +104,7 @@ for (const [, key, low, high] of backendRanges) {
 assert.deepEqual(plain(context.config.model_control), {
   max_concurrent: 1, min_interval: 2, queue_timeout: 25, request_timeout: 30,
   adaptive_enabled: true, adaptive_max_interval: 60, recover_successes: 3, background_idle_seconds: 20,
-  input_budget_chars: 16000, input_message_chars: 1000, learned_style_chars: 2500, sticker_limit: 12,
+  input_budget_chars: 16000, input_message_chars: 1000, learned_style_chars: 2500, member_memory_chars: 3500, sticker_limit: 12,
   reservoir_enabled: true, input_capacity_tokens: 60000, input_refill_tokens_per_minute: 60000,
   output_capacity_tokens: 6000, output_refill_tokens_per_minute: 6000
 });

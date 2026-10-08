@@ -94,7 +94,7 @@ class Response:
  def __exit__(self,*a):pass
  def geturl(self):return 'https://example.invalid/chat/completions'
  def read1(self,n):return b' '
-with patch.object(bot.opener,'open',return_value=Response()),patch.object(bot.time,'monotonic',side_effect=[0,26]),patch.object(bot.shared_budget,'claim_model',return_value=True):
+with patch.object(bot.opener,'open',return_value=Response()),patch.object(bot.time,'monotonic',side_effect=[0,bot.SETTINGS['model_control']['request_timeout']+1]),patch.object(bot.shared_budget,'claim_model',return_value=True):
  try:bot.post('https://example.invalid/chat/completions',{},'dummy');raise AssertionError('no total deadline')
  except TimeoutError:pass
 print('Actual source: aggregation, topic isolation, memory retry/application, receipt ambiguity, bookkeeping failure and model deadline verified.')

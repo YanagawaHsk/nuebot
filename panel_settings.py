@@ -9,8 +9,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 ROOT=Path(__file__).resolve().parent
 PATH=ROOT/'settings.json'
-RANGES={'collect_quiet':(5,60),'collect_incomplete':(5,90),'collect_max':(15,120),'reply_ttl':(30,180),'topic_gap':(60,900),'partition_gap':(30,900),'partition_span':(60,1800),'reference_age':(30,1800),'retry_attempts':(1,5),'retry_base':(3,60),'context_age':(60,1800),'context_messages':(1,40),'output_tokens':(32,4096),'messages_hour':(1,120),'model_calls_hour':(1,360),'cooldown_seconds':(0,3600),'delay_min':(0,60),'delay_max':(0,90),'mention_probability':(0,1),'topic_interval':(300,86400),'sticker_hour':(0,30),'sticker_interval':(0,3600)}
-DEFAULT_RUNTIME={'collect_quiet':12,'collect_incomplete':20,'collect_max':45,'reply_ttl':120,'topic_gap':120,'context_age':300,'time_partition_enabled':True,'partition_gap':90,'partition_span':300,'reference_age':180,'auto_retry':True,'retry_attempts':3,'retry_base':5,'context_messages':15,'output_tokens':128,'messages_hour':30,'model_calls_hour':120,'cooldown_seconds':120,'delay_min':8,'delay_max':12,'mention_probability':.9,'topic_enabled':True,'topic_interval':3600,'stickers_enabled':True,'sticker_hour':3,'sticker_interval':600,'challenge_filter':True,'catchphrase_filter':True,'chat_enabled':True,'mention_only':False}
+RANGES={'collect_quiet': (5, 60), 'collect_incomplete': (5, 90), 'collect_max': (15, 120), 'reply_ttl': (30, 180), 'topic_gap': (60, 900), 'partition_gap': (30, 900), 'partition_span': (60, 1800), 'reference_age': (30, 1800), 'retry_attempts': (1, 5), 'retry_base': (3, 60), 'context_age': (60, 1800), 'context_messages': (1, 40), 'output_tokens': (32, 4096), 'messages_hour': (1, 120), 'model_calls_hour': (1, 360), 'cooldown_seconds': (0, 3600), 'delay_min': (0, 60), 'delay_max': (0, 90), 'mention_probability': (0, 1), 'topic_interval': (300, 86400), 'sticker_hour': (0, 30), 'sticker_interval': (0, 3600), 'topic_start_hour': (0, 23), 'topic_end_hour': (1, 24), 'topic_idle_min': (60, 3600), 'topic_idle_max': (60, 7200), 'reply_max_parts': (1, 5), 'reply_max_chars': (24, 500), 'reply_brief_min': (1, 60), 'reply_brief_max': (5, 120), 'reply_part_delay': (0, 10), 'chat_temperature': (0, 2)}
+DEFAULT_RUNTIME={'collect_quiet': 12, 'collect_incomplete': 20, 'collect_max': 45, 'reply_ttl': 120, 'topic_gap': 120, 'context_age': 300, 'time_partition_enabled': True, 'partition_gap': 90, 'partition_span': 300, 'reference_age': 180, 'auto_retry': True, 'retry_attempts': 3, 'retry_base': 5, 'context_messages': 15, 'output_tokens': 128, 'messages_hour': 30, 'model_calls_hour': 120, 'cooldown_seconds': 120, 'delay_min': 8, 'delay_max': 12, 'mention_probability': 0.9, 'topic_enabled': True, 'topic_interval': 3600, 'stickers_enabled': True, 'sticker_hour': 3, 'sticker_interval': 600, 'challenge_filter': True, 'catchphrase_filter': True, 'chat_enabled': True, 'mention_only': False, 'topic_start_hour': 8, 'topic_end_hour': 23, 'topic_idle_min': 300, 'topic_idle_max': 1200, 'reply_max_parts': 3, 'reply_max_chars': 140, 'reply_brief_min': 5, 'reply_brief_max': 30, 'reply_part_delay': 2, 'chat_temperature': 0.85}
 DEFAULT_RELATIONSHIPS=[]
 
 def connection_defaults():
@@ -35,9 +35,12 @@ def validate_runtime(value):
     runtime={**DEFAULT_RUNTIME,**value}
     for key,(low,high) in RANGES.items():
         v=runtime.get(key)
-        if type(v) not in (int,float) or not low<=v<=high or (key!='mention_probability' and type(v) is not int):raise ValueError(f'{key} 超出可设置范围')
+        if type(v) not in (int,float) or not low<=v<=high or (key not in ('mention_probability','chat_temperature') and type(v) is not int):raise ValueError(f'{key} 超出可设置范围')
     if runtime['collect_incomplete']<runtime['collect_quiet'] or runtime['collect_max']<runtime['collect_incomplete'] or runtime['reply_ttl']<=runtime['collect_max']:raise ValueError('等待时长应满足：停顿 ≤ 未完句 ≤ 长段收集 < 回复有效期')
     if runtime['delay_max']<runtime['delay_min']:raise ValueError('最长等待不能小于最短等待')
+    if runtime['topic_start_hour']==runtime['topic_end_hour']:raise ValueError('主动话题起止时刻不能相同；全天可设0至24点')
+    if runtime['topic_idle_max']<=runtime['topic_idle_min']:raise ValueError('主动话题最长安静时间必须长于最短安静时间')
+    if not runtime['reply_brief_min']<=runtime['reply_brief_max']<=runtime['reply_max_chars']:raise ValueError('短句期望长度须满足：下限 ≤ 上限 ≤ 整轮回复总字数上限')
     for key in ('auto_retry','topic_enabled','stickers_enabled','challenge_filter','catchphrase_filter','chat_enabled','mention_only','time_partition_enabled'):
         if type(runtime.get(key)) is not bool:raise ValueError('开关设置不正确')
     # Older profiles may legally wait 90 seconds for an unfinished message.

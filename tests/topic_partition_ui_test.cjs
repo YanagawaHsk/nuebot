@@ -93,7 +93,7 @@ for (const key of ['reply_ttl', 'time_partition_enabled', 'partition_gap', 'part
   assert.equal(frontend[key], defaults[key], 'Backend-aligned new default ' + key);
 }
 for (const key of ['partition_gap', 'partition_span', 'reference_age']) {
-  const match = backend.match(new RegExp("'" + key + "':\\((\\d+),(\\d+)\\)"));
+  const match = backend.match(new RegExp("'" + key + "'\\s*:\\s*\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)"));
   assert.equal(Number(input(key).min), Number(match[1]));
   assert.equal(Number(input(key).max), Number(match[2]));
 }

@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import ai_guard
+import memory_learning
 
 ROOT = Path(__file__).resolve().parent / 'member-memory'
 MAX_PROFILES = 2000
@@ -75,6 +76,18 @@ def _entry_chars(value=24):
     return value
 
 
+def _member_limit(value, maximum, label):
+    if type(value) is not int or not 1 <= value <= maximum:
+        raise ValueError(label + '超出可设置范围')
+    return value
+
+
+def _recent_observations(rows, count):
+    selected = {index for index, _ in sorted(enumerate(rows),
+        key=lambda pair: (pair[1]['updated_at'], pair[0]), reverse=True)[:count]}
+    return [row for index, row in enumerate(rows) if index in selected]
+
+
 def _observation(value, max_entry_chars=24):
     """Permanent notes have a stricter boundary than editable chat prompts."""
     limit = _entry_chars(max_entry_chars)
@@ -111,12 +124,12 @@ def _safe_prompt_text(value):
     return '\n'.join(lines)
 
 
-def _sample_text(value):
+def _sample_text(value, limit=600):
     if not isinstance(value, str):
         raise ValueError('学习样本文字不正确')
     value = ai_guard.redact(ai_guard.normalized(value))
     value = re.sub(r'https?://\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]+|[0-9]{5,}', '[已隐藏]', value)
-    return re.sub(r'\s+', ' ', value).strip()[:600]
+    return re.sub(r'\s+', ' ', value).strip()[:limit]
 
 
 class Store:
@@ -164,9 +177,11 @@ class Store:
         return revision
 
     @staticmethod
-    def _public(row):
+    def _public(row, max_member_notes=None):
         data = json.loads(row['data'])
         learned = data.pop('_learned', [])
+        if max_member_notes is not None:
+            learned = _recent_observations(learned, max_member_notes)
         return {**data, 'user_id': row['user_id'], 'revision': row['revision'],
                 'deleted': bool(row['deleted']), 'created_at': row['created'], 'updated_at': row['updated'],
                 'updated': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(row['updated'])),
@@ -181,15 +196,18 @@ class Store:
         if expected_revision is not None and row['revision'] != expected_revision:
             raise ValueError('记忆已发生修改，请刷新后重试')
 
-    def entries(self, include_deleted=True):
+    def entries(self, include_deleted=True, max_member_notes=None):
         if type(include_deleted) is not bool:
             raise ValueError('记忆筛选开关不正确')
+        if max_member_notes is not None:
+            _member_limit(max_member_notes, 200, '群友学习观察条数')
         with self.db() as db:
             rows = db.execute('SELECT * FROM profiles' + ('' if include_deleted else ' WHERE deleted=0') + ' ORDER BY created,user_id').fetchall()
-        return [self._public(row) for row in rows]
+        return [self._public(row, max_member_notes) for row in rows]
 
-    def upsert(self, value, *, create_only=False, max_entry_chars=24):
+    def upsert(self, value, *, create_only=False, max_entry_chars=24, max_member_notes=20):
         limit = _entry_chars(max_entry_chars)
+        count = _member_limit(max_member_notes, 200, '群友学习观察条数')
         if type(create_only) is not bool:raise ValueError('群友记忆创建方式不正确')
         if not isinstance(value, dict):
             raise ValueError('群友记忆必须是对象')
@@ -208,7 +226,7 @@ class Store:
         now = time.time()
         edited = None
         if 'learned_notes' in value:
-            if not isinstance(value['learned_notes'], list) or len(value['learned_notes']) > MAX_LEARNED:
+            if not isinstance(value['learned_notes'], list) or len(value['learned_notes']) > count:
                 raise ValueError('学习观察列表格式或数量不正确')
             edited = []
             for text in value['learned_notes']:
@@ -261,8 +279,9 @@ class Store:
                        (json.dumps(data, ensure_ascii=False), revision, int(action == 'delete'), time.time(), uid))
             return self._public(db.execute('SELECT * FROM profiles WHERE user_id=?', (uid,)).fetchone())
 
-    def supplement(self, user_ids, security=None, max_chars=3500, references=None, max_entry_chars=24):
+    def supplement(self, user_ids, security=None, max_chars=3500, references=None, max_entry_chars=24, max_member_notes=20):
         limit = _entry_chars(max_entry_chars)
+        count = _member_limit(max_member_notes, 200, '群友学习观察条数')
         if not isinstance(user_ids, (list, tuple, set)) or len(user_ids) > 2000:
             raise ValueError('当前群友列表不正确')
         if type(max_chars) is not int or not 0 <= max_chars <= 20000:
@@ -282,7 +301,7 @@ class Store:
             return ''
         out = []
         order={uid:index for index,uid in enumerate(user_ids if not isinstance(user_ids,set) else sorted(user_ids))}
-        for row in sorted(self.entries(False),key=lambda row:order.get(row['user_id'],len(order))):
+        for row in sorted(self.entries(False, max_member_notes=count),key=lambda row:order.get(row['user_id'],len(order))):
             if row['user_id'] not in selected or not row['enabled']:
                 continue
             if references is not None and row['user_id'] not in references:
@@ -309,7 +328,8 @@ class Store:
                     out.append(short)
         return prefix + json.dumps(out, ensure_ascii=False) if out else ''
 
-    def learning_plan(self, job):
+    def learning_plan(self, job, settings=None):
+        policy = memory_learning.validate_policy(settings)
         if not isinstance(job, dict) or not isinstance(job.get('before'), list) or not isinstance(job.get('after'), list):
             raise ValueError('群友学习样本格式不正确')
         reaction = job.get('reaction', job.get('anchor'))
@@ -322,24 +342,30 @@ class Store:
         def sample(row, is_reaction=False):
             if not isinstance(row, dict):
                 raise ValueError('群友学习消息格式不正确')
-            clean = {'speaker': '机器人' if is_reaction else '群友', 'text': _sample_text(row.get('text', ''))}
+            clean = {'speaker': '机器人' if is_reaction else '群友', 'text': _sample_text(row.get('text', ''), policy['sample_message_chars'])}
             uid = row.get('_user_id')
             if isinstance(uid, str) and uid in profiles:
                 if uid not in references:
+                    if len(references) >= policy['member_batch_size']:
+                        return clean
                     ref = 'm' + str(len(references) + 1)
                     references[uid] = ref
                     allowed[ref] = {'user_id': uid, 'revision': profiles[uid]['revision']}
                 clean['member_ref'] = references[uid]
             return clean
 
-        public = {'before': [sample(row) for row in job['before'][-10:]],
-                  'reaction': sample(reaction, True), 'after': [sample(row) for row in job['after'][:10]]}
+        public = {'before': [sample(row) for row in job['before'][-policy['before_messages']:]],
+                  'reaction': sample(reaction, True), 'after': [sample(row) for row in job['after'][:policy['after_messages']]]}
         public['tracked_members'] = list(allowed)
         return public, allowed
 
-    def apply_learning(self, value, allowed_map, source_id='', security=None, max_entry_chars=24):
+    def apply_learning(self, value, allowed_map, source_id='', security=None, max_entry_chars=24,
+                       max_member_notes=20, member_batch_size=4, member_notes_per_sample=2):
         limit = _entry_chars(max_entry_chars)
-        if not isinstance(value, dict) or not isinstance(allowed_map, dict) or len(allowed_map) > 21:
+        count = _member_limit(max_member_notes, 200, '群友学习观察条数')
+        batch = _member_limit(member_batch_size, 20, '每次学习群友数量')
+        per_sample = _member_limit(member_notes_per_sample, 6, '每人每次学习观察条数')
+        if not isinstance(value, dict) or not isinstance(allowed_map, dict) or len(allowed_map) > 20:
             raise ValueError('群友学习结果格式不正确')
         rows = value.get('member_notes', [])
         if not isinstance(rows, list) or len(rows) > 21:
@@ -359,8 +385,13 @@ class Store:
             revision = _revision(target['revision'])
             if revision is None:
                 raise ValueError('群友学习引用版本不正确')
-            combined = validated.setdefault((uid, revision), [])
+            identity = (uid, revision)
+            if identity not in validated and len(validated) >= batch:
+                continue
+            combined = validated.setdefault(identity, [])
             for note in notes:
+                if len(combined) >= per_sample:
+                    break
                 if note and note not in combined:
                     combined.append(note)
         changed = 0
@@ -380,7 +411,7 @@ class Store:
                 for text in notes:
                     prior = next((note for note in learned if note['text'] == text), None)
                     if prior is None:
-                        if len(learned) >= MAX_LEARNED:
+                        if len(learned) >= count:
                             continue
                         prior = {'text': text, 'created_at': now, 'updated_at': now, 'evidence_count': 0, '_sources': [], '_unsourced': False}
                         learned.append(prior)

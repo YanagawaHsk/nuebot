@@ -248,6 +248,8 @@ def _auto_attempts(meta):
 
 def claim(group,policy=None,valid=lambda meta:True,*,send_not_before=0):
     now=time.time();retry=_retry_policy(policy)
+    part_delay=policy.get('reply_part_delay',2) if isinstance(policy,dict) else 2
+    if type(part_delay) is not int or not 0<=part_delay<=10:part_delay=2
     with db() as conn:
         conn.execute('BEGIN IMMEDIATE')
         _expire(conn,group,valid,now)
@@ -269,7 +271,7 @@ def claim(group,policy=None,valid=lambda meta:True,*,send_not_before=0):
             # group's ordinary sending cooldown. Both use confirmed time.
             if meta.get('output_queued') is True and _chain(meta) and _part(meta)>0:
                 previous=[prior for prior in history if _chain(metadata[prior['id']])==_chain(meta) and _part(metadata[prior['id']])<_part(meta)]
-                return bool(previous) and now>=max(prior['updated'] for prior in previous)+2
+                return bool(previous) and now>=max(prior['updated'] for prior in previous)+part_delay
             return now>=send_not_before
         row=next((candidate for candidate in history if candidate['state']=='queued' and ready(metadata[candidate['id']]) and due(candidate)),None)
         automatic=False

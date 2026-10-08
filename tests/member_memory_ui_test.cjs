@@ -42,15 +42,16 @@ const context = vm.createContext({ document, Date, console, Number, String, Obje
   $: selector => ids.get(selector.slice(1)),
   Option: function Option(text, value) { this.textContent = text; this.value = value; },
   config: { learning_groups: { '10002': { max_entry_chars: 40 } }, relationships: [{ user_id: '10009', name: '测试创造者', address: '妈妈', relationship: '妈妈（创造者）', behavior: '喜欢文字学和可爱的东西。' }] },
-  memoryGroup: '', memoryOffset: 0, memoryRequest: 0,
+  memoryGroup: '', memoryOffset: 0, memoryRequest: 0, savedLearningGroups: { '10002': { max_entry_chars: 40 } },
   memberMemoryGroup: '', memberMemoryEntries: [], memberMemoryRequest: 0,
   memberFormRevision: 0, memberFormVersion: 0, memberVersionSequence: 0,
-  memberFormDirty: false, memberSaving: false, memberMemoryDrafts: new Map(),
+  memberFormDirty: false, memberSaving: false, memberLearnedOriginal: '[]', memberMemoryDrafts: new Map(),
   toast: value => notices.push(value), learningError: value => value,
   confirm: value => { confirms.push(value); return allow; },
   api: async (url, body) => { calls.push({ url, body }); return { entries: [], total: 0 }; }
 });
-for (const name of ['renderMemberLearningHint', 'readMemory', 'memoryAction', 'emptyMemberMemory', 'memberFormValue', 'collectMemberDraft',
+vm.runInContext(script.match(/^const learningDefaults=[^\n]+/m)[0], context);
+for (const name of ['learningDraft', 'savedLearningPolicy', 'renderMemberLearningHint', 'readMemory', 'memoryAction', 'validateLearningEdit', 'emptyMemberMemory', 'memberFormValue', 'learnedSignature', 'collectMemberDraft',
   'showMemberFormState', 'fillMemberForm', 'markMemberDraft', 'renderMemberMemory', 'readMemberMemory',
   'renderMemberList', 'memberMemoryTime', 'renderMemberRelationChoices', 'importMemberRelationship',
   'editMemberMemory', 'newMemberMemory', 'saveMemberMemory', 'memberMemoryAction']) vm.runInContext(extract(name), context);
@@ -94,6 +95,7 @@ async function main() {
   const saving = context.saveMemberMemory();
   assert.equal(saveBody.value.expected_revision, undefined, 'New profiles omit a nonexistent expected revision');
   assert.equal(saveBody.value.learn_enabled, false);
+  assert(!('learned_notes' in saveBody.value), 'Unchanged learned observations are omitted from independent member saves');
   el('member-name').value = '等待时继续编辑'; context.markMemberDraft();
   saveGate.resolve({ ok: true, profile: row('10031', '提交名字', 1) }); await saving;
   assert.equal(el('member-name').value, '等待时继续编辑', 'In-flight save must preserve newer typing');
@@ -145,6 +147,74 @@ async function main() {
   assert(extract('selectWorkspace').includes('collectMemberDraft()'));
   assert(html.includes('同一 QQ 在不同群分别保存')); assert(html.includes('恢复保持停用'));
   assert(html.includes('不额外调用模型')); assert(html.includes('data-admin-only><h2>群友人设记忆'));
+  await preserveHistoryAndValidateEdits();
   console.log('PASS: group-isolated drafts, member opt-in learning, revision-safe saves, cross-group/late response guards, independent shared-relationship import, memory search/filter/counts and confirmed irreversible purge; status polling preserves edits; untrusted text is literal.');
+}
+async function preserveHistoryAndValidateEdits() {
+  context.memoryGroup = context.memberMemoryGroup = '10001';
+  context.savedLearningGroups['10001'] = { max_entry_chars: 4, max_member_notes: 1, max_notes_per_category: 1, before_messages: 2, after_messages: 3 };
+  const historical = { ...row('10071', '旧名字', 4), learned_notes: ['超过新上限的旧观察', '第二条旧观察'] };
+  const memberWrites = [];
+  context.api = async (url, body) => {
+    if (!body) return { entries: [], total: 0 };
+    memberWrites.push(body);
+    return { ok: true, profile: { ...historical, ...body.value, learned_notes: body.value.learned_notes || historical.learned_notes, revision: 5 } };
+  };
+  context.fillMemberForm(historical);
+  el('member-name').value = '只改名字'; el('member-notes').value = '保留手动描述'.repeat(15); context.markMemberDraft();
+  context.memoryGroup = '10002'; context.renderMemberMemory(); await flush();
+  context.memoryGroup = '10001'; context.renderMemberMemory(); await flush();
+  await context.saveMemberMemory();
+  assert(!('learned_notes' in memberWrites[0].value), 'Changing name or manual notes must not resubmit over-limit historical observations after group switching');
+  assert.equal(memberWrites[0].value.expected_revision, 4);
+  assert.equal(el('member-learned').value, historical.learned_notes.join('\n'));
+  el('member-learned').value = '一条\n两条'; context.markMemberDraft(); await context.saveMemberMemory();
+  assert.equal(memberWrites.length, 1, 'Edited learned observations exceeding the saved count are rejected locally');
+  el('member-learned').value = '新编辑内容太长'; context.markMemberDraft(); await context.saveMemberMemory();
+  assert.equal(memberWrites.length, 1, 'Edited learned observations exceeding saved character limits are rejected locally');
+  assert(notices.at(-1).includes('收短')); assert(el('member-learned').focused);
+  el('member-learned').value = '短句'; context.markMemberDraft();
+  const gate = deferred();
+  context.api = async (url, body) => { if (!body) return { entries: [], total: 0 }; memberWrites.push(body); return gate.promise; };
+  const saving = context.saveMemberMemory();
+  assert.deepEqual(JSON.parse(JSON.stringify(memberWrites.at(-1).value.learned_notes)), ['短句']);
+  assert.equal(memberWrites.at(-1).value.expected_revision, 5);
+  el('member-learned').value = '后改'; context.markMemberDraft();
+  gate.resolve({ ok: true, profile: { ...historical, learned_notes: ['短句'], revision: 6 } }); await saving;
+  assert.equal(el('member-learned').value, '后改', 'An in-flight learned-observation save cannot replace later editing');
+  assert.equal(context.memberFormRevision, 6);
+  context.api = async (url, body) => { if (!body) return { entries: [], total: 0 }; memberWrites.push(body); return { ok: true, profile: { ...historical, ...body.value, revision: 7 } }; };
+  await context.saveMemberMemory();
+  assert.equal(memberWrites.at(-1).value.expected_revision, 6);
+  assert.deepEqual(JSON.parse(JSON.stringify(memberWrites.at(-1).value.learned_notes)), ['后改'], 'The newly saved baseline still detects newer observation edits');
+
+  context.memoryOffset = 0; el('memory-state').value = 'all'; el('memory-search').value = '';
+  context.api = async () => ({ entries: [], total: 0 }); await context.readMemory();
+  assert(el('memory-log').textContent.includes('前2条、后3条'), 'Empty-library guidance reflects the saved sample targets');
+  const legacyRecord = { id: 'legacy-long', time: '现在', summary: '超过当前上限的历史总结', style_notes: ['历史长观察', '第二条观察'], interests: [], cautions: [], active: false, deleted: false, before_count: 10, after_count: 10 };
+  const memoryWrites = [];
+  context.api = async (url, body) => {
+    if (body) { memoryWrites.push(body); if (body.action === 'set_active') legacyRecord.active = body.value.active; return { ok: true }; }
+    return url.startsWith('/api/memory?') ? { entries: [legacyRecord], total: 1 } : { entries: [], total: 0 };
+  };
+  await context.readMemory();
+  const descendants = node => node.children.flatMap(child => child instanceof Element ? [child, ...descendants(child)] : []);
+  let nodes = descendants(el('memory-log').children[0]);
+  nodes.find(node => node.tagName === 'input').checked = true;
+  await nodes.find(node => node.tagName === 'button' && node.textContent === '保存此记录').onclick();
+  assert.equal(memoryWrites.length, 1);
+  assert.equal(memoryWrites[0].action, 'set_active');
+  assert.deepEqual(JSON.parse(JSON.stringify(memoryWrites[0].value)), { active: true });
+  assert.equal(legacyRecord.summary, '超过当前上限的历史总结');
+  nodes = descendants(el('memory-log').children[0]);
+  const areas = nodes.filter(node => node.tagName === 'textarea'), save = nodes.find(node => node.tagName === 'button' && node.textContent === '保存此记录');
+  areas[0].value = '改过但太长'; await save.onclick();
+  assert.equal(memoryWrites.length, 1, 'Editing an over-limit summary cannot silently truncate history');
+  areas[0].value = '短'; areas[1].value = '一条\n两条'; await save.onclick();
+  assert.equal(memoryWrites.length, 1, 'Editing too many category notes is rejected before submission');
+  areas[1].value = '短句'; await save.onclick();
+  assert.equal(memoryWrites.length, 2); assert.equal(memoryWrites[1].action, 'edit');
+  assert.equal(memoryWrites[1].value.summary, '短');
+  assert.deepEqual(JSON.parse(JSON.stringify(memoryWrites[1].value.style_notes)), ['短句']);
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

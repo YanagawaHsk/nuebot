@@ -446,8 +446,8 @@ class Handler(BaseHTTPRequestHandler):
                 gid=self.learning_group(body.get('group_id',0))
                 if body.get('action')=='purge' and body.get('confirmed') is not True:raise ValueError('请确认彻底删除这条记忆')
                 learning_policy=memory_learning.config(settings.load(),gid)
-                memory_learning.Store(gid).update(body.get('id',''),body.get('action'),body.get('value'),max_entry_chars=learning_policy.get('max_entry_chars',24))
-                if body.get('action') in ('edit','delete','purge'):member_memory.Store(gid).remove_source(body.get('id',''))
+                memory_learning.Store(gid).update(body.get('id',''),body.get('action'),body.get('value'),max_entry_chars=learning_policy.get('max_entry_chars',24),max_notes_per_category=learning_policy.get('max_notes_per_category',6))
+                if body.get('action') in ('edit','delete','purge') or (body.get('action')=='set_active' and body.get('value',{}).get('active') is False):member_memory.Store(gid).remove_source(body.get('id',''))
                 self.audit_target=str(gid)+':'+str(body.get('id',''))
                 return self.reply({'ok':True})
             if self.path=='/api/member-memory':
@@ -455,7 +455,7 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get('action')=='save':
                     value=body.get('value')
                     learning_policy=memory_learning.config(settings.load(),gid)
-                    profile=store.upsert(value,create_only=isinstance(value,dict) and value.get('expected_revision') is None,max_entry_chars=learning_policy.get('max_entry_chars',24))
+                    profile=store.upsert(value,create_only=isinstance(value,dict) and value.get('expected_revision') is None,max_entry_chars=learning_policy.get('max_entry_chars',24),max_member_notes=learning_policy.get('max_member_notes',20))
                     self.audit_target=str(gid)+':'+profile['user_id']
                     return self.reply({'ok':True,'profile':profile})
                 if body.get('action')=='purge' and body.get('confirmed') is not True:raise ValueError('请确认彻底删除这位群友的记忆')
