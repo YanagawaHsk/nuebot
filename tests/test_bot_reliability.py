@@ -74,9 +74,11 @@ queue.confirm_unsent(bot.GROUP,unknown['id'],True);bot.HALT.unlink()
 # Queue persistence failure after successful sending never repeats its callback.
 bot.reply_local.meta=bot.flow.stamp(batch,90)
 with patch.object(bot,'ob',return_value={'message_id':999}) as called,patch.object(bot.shared_budget,'replace_with_retry',side_effect=PermissionError('budget disk busy')):
- assert bot.send('已送达但额度落盘失败')
+ assert not bot.send('已送达但额度落盘失败')
  called.assert_called_once()
 assert queue.entries(bot.GROUP)['entries'][0]['state']=='confirmed'
+assert bot.HALT.exists()
+bot.HALT.unlink()
 # Exception while recording the receipt is fail-closed and remains reconcilable.
 original_mark=queue.mark
 def broken_mark(group,ident,state,*a,**k):

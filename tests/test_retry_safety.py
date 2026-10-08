@@ -209,7 +209,7 @@ class RetryLogTests(unittest.TestCase):
             self.assertNotIn('private',json.dumps(result));self.assertNotIn('secret.invalid',json.dumps(result))
             self.assertEqual(error_log.entries(10001,category='model')['total'],6)
         exc=urllib.error.HTTPError('https://secret.invalid/token',429,'private response',{},None)
-        self.assertEqual(error_log.fields(exc),{'type':'HTTPError','code':'HTTP429'})
+        self.assertEqual(error_log.fields(exc),{'type':'HTTPError','code':'HTTP429','http_status':429,'provider_class':'unknown'})
         self.assertEqual(error_log.fields(ValueError('private key')),{'type':'ValueError'})
 
 if __name__=='__main__':unittest.main()

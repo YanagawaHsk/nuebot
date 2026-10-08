@@ -7,7 +7,7 @@ on:
       tag:
         description: 'Version tag matching version.json, e.g. v1.1.1'
         required: true
-        default: v1.8.1
+        default: v1.8.5
 permissions:
   contents: write
 concurrency:
@@ -29,10 +29,13 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Test panel save and delivery controls
         run: node work/panel_ui_test.cjs
-      - name: Test unified QQ control center
-        run: node tests/control_center_ui_test.cjs
-      - name: Test reply health panel
-        run: node tests/reply_health_ui_test.cjs
+      - name: Test all panel features
+        shell: pwsh
+        run: |
+          Get-ChildItem tests -Filter '*_ui_test.cjs' | Sort-Object Name | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Panel check failed: $($_.Name)" }
+          }
       - name: Build only allowlisted files
         run: python tools/build_release.py
       - name: Publish release and update manifest

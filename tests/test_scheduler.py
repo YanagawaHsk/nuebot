@@ -238,7 +238,7 @@ class GateTests(unittest.TestCase):
             conn.execute('UPDATE gates SET blocked_until=0 WHERE service=?', (self.key,))
 
     def test_default_policy_validation_and_equivalent_service_url(self):
-        self.assertEqual(model_gate.validate({}), {'max_concurrent': 1, 'min_interval': 2, 'queue_timeout': 25, 'request_timeout': 30})
+        self.assertEqual(model_gate.validate({}), model_gate.DEFAULT)
         self.assertEqual(self.key, model_gate.service('https://example.invalid/v1/', 'test-only-token'))
         for policy in [{'max_concurrent': 0}, {'min_interval': True}, {'request_timeout': 91}, {'queue_timeout': 1}]:
             with self.assertRaises(ValueError):
@@ -625,7 +625,7 @@ sys.path.insert(0, sys.argv[1])
 import model_gate
 model_gate.ROOT = Path(sys.argv[2])
 model_gate._POLL_INTERVAL = .05
-policy = {'max_concurrent': 2, 'min_interval': .08, 'queue_timeout': 60, 'request_timeout': 5}
+policy = {'max_concurrent': 2, 'min_interval': .3, 'queue_timeout': 60, 'request_timeout': 5}
 with model_gate.acquire(sys.argv[3], int(sys.argv[4]), 'chat', policy):
     (model_gate.ROOT / (sys.argv[4] + '.ready')).write_text('leased')
     end = time.monotonic() + 60
@@ -655,7 +655,10 @@ print(json.dumps(start))
                     child.kill()
                     child.communicate()
         starts.sort()
-        self.assertGreaterEqual(starts[1] - starts[0], .075)
+        # This exercises real Windows processes and SQLite commits. Leave a
+        # scheduling margin rather than requiring 5 ms precision under load;
+        # a missing cross-process HTTP-start gate still produces a near burst.
+        self.assertGreaterEqual(starts[1] - starts[0], .2)
         self.assertEqual(model_gate.snapshot(self.key)['active'], 0)
 
 

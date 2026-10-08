@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import model_diagnostics
 
 ROOT = Path(__file__).resolve().parent
 LOG_BYTES = 2 * 1024 * 1024
@@ -37,6 +38,9 @@ REASONS = {
     'ModelSilent', 'SecurityOutputBlocked', 'CatchphraseFiltered', 'Superseded',
     'RetryScheduled', 'PluginFailure', 'ModelFailure', 'OneBotRejected',
     'RetryableBeforeSend', 'UnknownDelivery', 'OneBotConfirmed',
+    'ReconciledConfirmed',
+    'OutputQueued', 'model_reservoir', 'model_background',
+    'TopicPartitionExpired', 'StaleIncomingMessage', 'MemoryChanged',
 }
 _CODES = {
     'HTTPError', 'UnknownError', 'TypeError', 'ValueError', 'KeyError', 'OSError',
@@ -46,13 +50,17 @@ _CODES = {
     'URLError', 'JSONDecodeError', 'OperationalError', 'DatabaseError', 'StorageError',
     'Hourly model budget exhausted', 'DeliveryQueueFull', 'DeliveryTooLarge',
     'ModelQueueFull', 'ModelQueueTimeout', 'ModelRequestTimeout', 'ModelResponseTooLarge',
-    'ReplySuperseded', 'ReplyExpired', 'Disconnected', 'MessageLimit', 'EarlierMessageUnsent',
+    'ReplySuperseded', 'ReplyExpired', 'MemoryChanged', 'Disconnected', 'MessageLimit', 'EarlierMessageUnsent',
     'InterruptedBeforeSend', 'RetryableBeforeSend', 'OneBotRejected', 'InterruptedSend',
     'UnknownOutcome', 'EmptyReply', 'RedirectRejected', 'ProbeRateLimited',
+    'ModelMissingChoices', 'ModelInvalidJSON', 'ModelInvalidSchema', 'ModelOutputTruncated',
+    'ModelReservoirTimeout', 'ModelInputTooLarge', 'OutputQueued', 'OutputQueueFull',
+    'GroupDisabled', 'MentionOnly', 'PluginDisabled', 'StickerDisabled',
+    'InputBudgetExceeded', 'InputReservoirTooSmall', 'OutputReservoirTooSmall',
 }
 _EVENTS = {
     'chat_paused', 'chat_resumed', 'connection_error', 'delivery_queue_error', 'fatal', 'heartbeat_error',
-    'memory_learned', 'memory_learning_error', 'memory_learning_retry',
+    'memory_learned', 'memory_learning_error', 'memory_learning_retry', 'member_memory_learned', 'member_memory_learning_error',
     'memory_learning_storage_error', 'memory_learning_worker_error', 'message_sent',
     'model_error', 'model_retry', 'moderation_error', 'moderation_missing_permission',
     'moderation_mute', 'moderation_unknown', 'moderation_warning', 'owner_stop',
@@ -61,6 +69,8 @@ _EVENTS = {
     'security_output_blocked', 'send_error', 'send_unknown', 'settings_applied',
     'settings_error', 'stale_reply_discarded', 'websocket_connected', 'websocket_error',
     'reply_health', 'reply_telemetry_ready',
+    'model_wait', 'memory_learning_wait', 'moderation_wait', 'moderation_retry', 'model_request', 'model_request_finished',
+    'output_queued', 'model_input_budget', 'model_provider_error',
 } | {'reply_' + stage for stage in STAGES}
 _LINE = re.compile(r'^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,6})?)\s+([a-z][a-z0-9_]{0,79})\s+(.*)$')
 _PROBE_LOCK = threading.Lock()
@@ -78,14 +88,25 @@ def reason_key(value):
 def fields(exc):
     result = {'type': type(exc).__name__}
     if isinstance(exc, urllib.error.HTTPError):
-        result['code'] = 'HTTP' + str(exc.code)
+        result.update(model_diagnostics.error_fields(exc))
+        result['code'] = 'HTTP' + str(result['http_status']) if 'http_status' in result else 'HTTPError'
+    elif safe_code(getattr(exc,'code',None)) != 'UnknownError':
+        result['code'] = safe_code(exc.code)
     elif str(exc) in _CODES - {'UnknownError'}:
         result['code'] = str(exc)
     return result
 
 
-def suggestion(code):
+def suggestion(code, provider_class=None):
     code = safe_code(code)
+    provider_advice = {
+        'rate_requests': '服务明确返回请求频率受限；等待共用队列退避，并降低所有群合计的调用频率。',
+        'rate_tokens': '服务明确返回令牌速率受限；缩短输入或输出预算，并等待共用队列恢复。',
+        'quota': '服务明确返回额度或余额不足；查看服务商账号状态，本地令牌缓冲不会增加服务额度。',
+        'capacity': '服务明确返回暂时过载；等待服务恢复，旧回复过期后会放弃。',
+    }
+    if type(provider_class) is str and provider_class in provider_advice:
+        return provider_advice[provider_class]
     if code == 'HTTP429':
         return '服务拒绝了本次请求，可能是速率限制或服务配额；先等待退避，再查看服务商后台限制。仅凭429不能判定余额不足。'
     if code == 'HTTPError':
@@ -96,8 +117,18 @@ def suggestion(code):
         return '核对API最终地址、模型名称和请求格式；模型列表能读取不代表生成请求一定成功。'
     if re.fullmatch(r'HTTP5\d\d', code):
         return '模型服务出现临时故障，请等待退避后再试，避免连续手动测试增加请求。'
-    if code in ('ModelQueueFull', 'ModelQueueTimeout', 'Hourly model budget exhausted'):
+    if code in ('ModelQueueFull', 'ModelQueueTimeout', 'ModelReservoirTimeout', 'Hourly model budget exhausted'):
         return '请求正在受共享排队或额度保护限制；查看等待原因，增加触发概率不能解除限制。'
+    if code in ('ModelInputTooLarge', 'InputBudgetExceeded'):
+        return '固定说明和本轮必要输入仍超过本地输入上限；调整字符预算或缩短固定说明后再处理新消息。'
+    if code == 'InputReservoirTooSmall':
+        return '单次必要输入的保守令牌预估超过本地输入缓冲容量；缩短输入或提高输入缓冲容量。'
+    if code == 'OutputReservoirTooSmall':
+        return '单次输出预算超过本地输出缓冲容量；降低输出上限或提高输出缓冲容量。'
+    if code == 'OutputQueued':
+        return '回复已经生成并进入本地发送队列；后台按本群节奏和额度发送，仍会检查有效期。'
+    if code == 'OutputQueueFull':
+        return '本群已有较多待发送回复；先等待已有内容按节奏发送，过期内容会放弃。'
     if code in ('TimeoutError', 'ModelRequestTimeout', 'URLError'):
         return '请求连接或读取超时；核对运行机器的网络与模型服务，并查看最新测试时间。'
     if code in ('Disconnected', 'ConnectionRefusedError', 'ConnectionClosedOK', 'ConnectionClosedError', 'InvalidStatus', 'InvalidMessage'):
@@ -106,25 +137,30 @@ def suggestion(code):
         return '发送结果不明确；请在QQ人工核对，不能自动重发或据此认定未发送。'
     if code in ('ReplyExpired', 'ReplySuperseded'):
         return '回复已过期或被新消息替代，已放弃旧内容；不要强行补发脱离当前话题的回复。'
+    if code=='MemoryChanged':return '长期记忆已编辑或删除，旧记忆生成的草稿已作废；当前新消息可按新记忆重新生成。'
     if code in ('PermissionError', 'StorageError', 'OperationalError', 'DatabaseError'):
         return '检查本地文件权限、文件占用和可用空间，保留现有配置和数据。'
     if code == 'RedirectRejected':
         return 'API返回了重定向，请在连接设置填写实际最终地址；不会把密钥转发到新地址。'
-    if code == 'EmptyReply':
+    if code in ('EmptyReply','ModelMissingChoices','ModelInvalidJSON','ModelInvalidSchema','ModelOutputTruncated'):
         return '模型接口没有返回可公开发送的短回复；请核对模型与思考设置的兼容性。'
     return '这是安全错误分类；请结合QQ连接、等待原因和最新模型测试判断，不回显供应商原始报错。'
 
 
 def _category(event):
-    return ('memory' if 'learning' in event else 'send' if 'send' in event or 'delivery' in event
+    return ('memory' if 'learning' in event else 'send' if 'send' in event or 'delivery' in event or event == 'output_queued'
             else 'model' if 'model' in event else 'connection' if 'websocket' in event or event == 'connection_error'
             else 'plugin' if 'plugin' in event else 'moderation' if 'moderation' in event else 'other')
 
 
 def _is_error(event, data):
+    if event == 'model_provider_error':
+        # The matching model_error owns the failure count. This event carries
+        # only safe metadata and must not duplicate the same provider failure.
+        return False
     return (any(word in event for word in ('error', 'fatal', 'unknown', 'retry', 'failed'))
-            or event in ('stale_reply_discarded', 'moderation_missing_permission')
-            or event == 'reply_health' and data.get('stage') in ('send_failed', 'send_unknown', 'expired'))
+            or event in ('stale_reply_discarded', 'moderation_missing_permission','model_wait','memory_learning_wait','moderation_wait')
+            or event == 'reply_health' and data.get('stage') in ('send_failed', 'send_unknown', 'expired','skipped'))
 
 
 def _read(group):
@@ -188,10 +224,16 @@ def entries(group, offset=0, category='all'):
         wait = data.get('wait_seconds')
         if type(wait) not in (int, float) or not math.isfinite(wait) or not 0 <= wait <= 3600:
             wait = None
+        provider = _provider_fields(data)
         result.append({'time': stamp, 'event': event if event in _EVENTS else 'other_event',
                        'category': kind, 'code': code, 'retry_seconds': wait,
-                       'suggestion': suggestion(code),
-                       'missing_http_status': code == 'HTTPError'})
+                       'outcome':'waiting' if event.endswith(('_wait','_retry')) else 'expired' if event=='stale_reply_discarded' or data.get('stage')=='expired' else 'silent' if event=='reply_health' and data.get('stage')=='skipped' and data.get('reason_key') not in ('ModelFailure','PluginFailure') else 'failure',
+                       'reason_key':reason_key(data.get('reason_key')),
+                       'purpose':data.get('purpose') if data.get('purpose') in ('mention','chat','topic','learning','moderation') else None,
+                       'attempt':_number(data.get('attempt'),5),'queue_waits':_number(data.get('queue_waits'),32),
+                       'duration_ms':_number(data.get('duration_ms'),3600000),
+                       'suggestion': suggestion(code, provider.get('provider_class')),
+                       'missing_http_status': code == 'HTTPError', **provider})
     result.reverse()
     return {'entries': result[offset:offset + 50], 'total': len(result), 'offset': offset,
             'truncated': source['truncated'], 'source': source}
@@ -203,6 +245,30 @@ def _iso(instant):
 
 def _number(value, maximum=1000000):
     return value if type(value) is int and 0 <= value <= maximum else None
+
+
+def _provider_fields(data):
+    """Filter provider metadata again when reading potentially old local logs."""
+    out = {}
+    provider_class = data.get('provider_class')
+    if type(provider_class) is str and provider_class in ('rate_requests', 'rate_tokens', 'quota', 'capacity', 'unknown'):
+        out['provider_class'] = provider_class
+    status = data.get('http_status')
+    if type(status) is int and 100 <= status <= 599:
+        out['http_status'] = status
+    out.update(model_diagnostics.response_fields({}, {'x-request-id': data.get('request_id')}))
+    delay = data.get('retry_after_seconds')
+    if type(delay) in (int, float):
+        try:
+            if math.isfinite(delay) and 0 <= delay <= 3600:
+                out['retry_after_seconds'] = float(delay)
+        except (OverflowError, ValueError):
+            pass
+    for name in ('usage_prompt_tokens', 'usage_completion_tokens', 'usage_total_tokens', 'input_chars'):
+        value = _number(data.get(name), 1_000_000_000)
+        if value is not None:
+            out[name] = value
+    return out
 
 
 def _queue(group):
@@ -318,12 +384,14 @@ def reply_health(group, hours=24, worker=None, now=None, disable_thinking=None):
         event_row = events.setdefault(safe_event, {'event': safe_event, 'count': 0, 'first_at': stamp, 'last_at': stamp})
         event_row['count'] += 1
         event_row['last_at'] = stamp
-        if _is_error(event, data):
+        if _is_error(event, data) and not event.endswith(('_wait','_retry')) and event!='stale_reply_discarded' and not (event=='reply_health' and data.get('stage') in ('expired','skipped')):
             code = safe_code(data.get('code') or data.get('reason') or data.get('type', 'UnknownError'))
             category = _category(event)
-            error = errors.setdefault((category, code), {'category': category, 'code': code,
-                'count': 0, 'first_at': stamp, 'last_at': stamp, 'suggestion': suggestion(code),
-                'missing_http_status': code == 'HTTPError'})
+            provider_class = _provider_fields(data).get('provider_class')
+            error = errors.setdefault((category, code, provider_class), {'category': category, 'code': code,
+                'count': 0, 'first_at': stamp, 'last_at': stamp, 'suggestion': suggestion(code, provider_class),
+                'missing_http_status': code == 'HTTPError',
+                **({'provider_class': provider_class} if provider_class is not None else {})})
             error['count'] += 1
             error['last_at'] = stamp
         stage = data.get('stage') if event == 'reply_health' else event[6:] if event.startswith('reply_') else None

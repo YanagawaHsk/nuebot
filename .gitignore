@@ -13,6 +13,7 @@ sticker-catalog.json
 stickers*/
 group-workers/
 learning-memory/
+member-memory/
 settings-backups/
 backups/
 plugin-trash/
@@ -35,3 +36,6 @@ panel-accounts.tmp
 admin-setup-code.txt
 access-audit.jsonl
 access-audit.tmp
+
+# Local model connection diagnostics
+model-diagnostics.json

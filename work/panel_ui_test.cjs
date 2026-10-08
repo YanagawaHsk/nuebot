@@ -62,8 +62,8 @@ const document = {
   querySelector(selector) { if (selector.startsWith('#nav button')) return rhythmNav; if (selector.startsWith('#')) return ids.get(selector.slice(1)); return inputs.find(el => matches(el, selector)); },
   querySelectorAll(selector) { return inputs.filter(el => selector.split(',').some(part => matches(el, part))); }
 };
-for (const match of html.matchAll(/<input type="checkbox" data-runtime="([^"]+)"/g)) {
-  const input = document.createElement('input'); input.type = 'checkbox'; input.dataset.runtime = match[1];
+for (const match of html.matchAll(/<input type="checkbox" data-(runtime|model-control|moderation-intake)="([^"]+)"/g)) {
+  const input = document.createElement('input'); input.type = 'checkbox'; input.dataset[camel(match[1])] = match[2];
 }
 const requests = [], toasts = [];
 let entries = [];
@@ -76,36 +76,56 @@ const context = vm.createContext({ document, console, Date, Math, Number, Object
   editingGroup: '10001', pluginGroup: '', memoryGroup: '', lastStatus: {}, deliveryOffset: 0,
   deliveryVerifications: new Map(), deliveryKey: (gid, row) => gid + ':' + row.id
 });
-for (const name of ['fields', 'extras', 'runtimeSchedulingDefaults', 'modelControlDefaults', 'collectionFields', 'retryFields', 'modelControlFields', 'deliveryNames']) {
+for (const name of ['fields', 'extras', 'runtimeSchedulingDefaults', 'modelControlDefaults', 'moderationIntakeDefaults', 'collectionFields', 'topicPartitionFields', 'retryFields', 'modelControlFields', 'modelInputFields', 'modelReservoirFields', 'moderationIntakeFields', 'deliveryNames']) {
   const declaration = script.match(new RegExp('^const ' + name + '=[^\\n]+', 'm'));
   assert(declaration, 'Missing declaration ' + name); vm.runInContext(declaration[0], context);
 }
-for (const name of ['makeFields', 'groupIds', 'ensureGroupConfig', 'runtimeDraft', 'collectRuntimeDraft', 'renderRuntimeDraft', 'renderModelControl', 'collectModelControl', 'collectLimits', 'collect', 'validateRuntimeTiming', 'validateNumericFields', 'renderConversationProgress', 'renderLearningHealth', 'diagnosticInfo', 'learningError', 'deliveryReason', 'deliveryExpired', 'deliveryAction', 'readDeliveries']) vm.runInContext(extract(name), context);
-vm.runInContext("makeFields('#runtime-fields',fields,'runtime');makeFields('#extra-fields',extras,'runtime');makeFields('#collection-fields',collectionFields,'runtime');makeFields('#retry-fields',retryFields,'runtime');makeFields('#model-control-fields',modelControlFields,'modelControl');", context);
+for (const name of ['makeFields', 'groupIds', 'ensureGroupConfig', 'runtimeDraft', 'collectRuntimeDraft', 'renderRuntimeDraft', 'renderModelControl', 'collectModelControl', 'renderModerationIntake', 'collectModerationIntake', 'collectLimits', 'collect', 'validateRuntimeTiming', 'validateNumericFields', 'healthCount', 'renderConversationProgress', 'renderLearningHealth', 'diagnosticInfo', 'learningError', 'deliveryReason', 'deliveryExpired', 'deliveryAction', 'readDeliveries']) vm.runInContext(extract(name), context);
+vm.runInContext("makeFields('#runtime-fields',fields,'runtime');makeFields('#extra-fields',extras,'runtime');makeFields('#collection-fields',collectionFields,'runtime');makeFields('#topic-partition-fields',topicPartitionFields,'runtime');makeFields('#retry-fields',retryFields,'runtime');makeFields('#model-control-fields',modelControlFields,'modelControl');makeFields('#model-input-fields',modelInputFields,'modelControl');makeFields('#model-reservoir-fields',modelReservoirFields,'modelControl');makeFields('#moderation-intake-fields',moderationIntakeFields,'moderationIntake');", context);
 context.config = {
   connection: { group_id: 10001, base_url: 'https://example.invalid', model: 'fake-model', disable_thinking: true },
   runtime: { context_messages: 15, output_tokens: 128, messages_hour: 30, model_calls_hour: 120, cooldown_seconds: 120, delay_min: 3, delay_max: 5, mention_probability: .9, topic_interval: 3600, sticker_hour: 3, sticker_interval: 600, catchphrase_filter: true, challenge_filter: true, chat_enabled: true, mention_only: false, topic_enabled: true, stickers_enabled: true },
   runtime_groups: { '10001': { messages_hour: 31 }, '10002': { messages_hour: 17, collect_quiet: 18, collect_incomplete: 25 } },
   groups: [{ group_id: 10001, enabled: true }, { group_id: 10002, enabled: false }],
   plugin_groups: { '10001': { enabled: false, features: {} }, '10002': { enabled: true, features: { dice: true } } },
-  learning_groups: { '10002': { enabled: true } }, security: { input_filter: true }, persona: 'test persona', moderation: { enabled: false }, keywords: [], relationships: []
+  learning_groups: { '10002': { enabled: true } }, security: { input_filter: true }, persona: 'test persona', moderation: { enabled: false }, moderation_intake: { audit_interval: 180 }, keywords: [], relationships: []
 };
 context.ensureGroupConfig();
 assert.equal(context.config.runtime_groups['10001'].collect_quiet, 12);
 assert.equal(context.config.runtime_groups['10002'].collect_quiet, 18);
 assert.equal(context.config.runtime_groups['10001'].delay_min, 3);
 assert.equal(context.config.runtime_groups['10002'].messages_hour, 17);
-context.renderRuntimeDraft(); context.renderModelControl();
+assert.equal(context.config.runtime_groups['10001'].partition_gap, 90);
+assert.equal(context.config.model_control.input_budget_chars, 16000);
+assert.equal(context.config.model_control.input_capacity_tokens, 60000);
+assert.equal(context.config.moderation_intake.risk_screening, true);
+assert.equal(context.config.moderation_intake.audit_every, 50);
+assert.equal(context.config.moderation_intake.audit_interval, 180);
+assert.equal(context.config.moderation_intake.batch_limit, 12);
+context.renderRuntimeDraft(); context.renderModelControl(); context.renderModerationIntake();
 document.querySelector('[data-runtime="collect_quiet"]').value = 14;
 context.collectRuntimeDraft(); context.editingGroup = '10002'; context.renderRuntimeDraft();
 assert.equal(document.querySelector('[data-runtime="collect_quiet"]').value, '18');
 context.editingGroup = '10001'; context.renderRuntimeDraft();
 assert.equal(document.querySelector('[data-runtime="collect_quiet"]').value, '14');
 document.querySelector('[data-model-control="min_interval"]').value = 4;
+document.querySelector('[data-model-control="input_budget_chars"]').value = 32000;
+document.querySelector('[data-model-control="input_capacity_tokens"]').value = 90000;
+document.querySelector('[data-moderation-intake="audit_every"]').value = 75;
+document.querySelector('[data-moderation-intake="batch_limit"]').value = 8;
+document.querySelector('[data-moderation-intake="risk_screening"]').checked = false;
 for (const [id, value] of Object.entries({ 'api-url': 'https://example.invalid', 'api-model': 'fake-model', 'group-id': '10001', persona: 'test persona', 'account-messages': '60', 'account-models': '240' })) ids.get(id).value = value;
 ids.get('api-thinking').checked = true; ids.get('account-cap').checked = true;
 const payload = context.collect();
 assert.equal(payload.model_control.min_interval, 4);
+assert.equal(payload.model_control.input_budget_chars, 32000);
+assert.equal(payload.model_control.input_capacity_tokens, 90000);
+assert.equal(payload.model_control.adaptive_enabled, true);
+assert.equal(payload.model_control.reservoir_enabled, true);
+assert.equal(payload.moderation_intake.audit_every, 75);
+assert.equal(payload.moderation_intake.audit_interval, 180);
+assert.equal(payload.moderation_intake.batch_limit, 8);
+assert.equal(payload.moderation_intake.risk_screening, false);
 assert.equal(payload.runtime_groups['10001'].collect_quiet, 14);
 assert.equal(payload.runtime_groups['10002'].collect_quiet, 18);
 assert.equal(payload.runtime_groups['10001'].delay_min, 3);
@@ -119,6 +139,15 @@ document.querySelector('[data-model-control="max_concurrent"]').value = '1';
 document.querySelector('[data-runtime="reply_ttl"]').value = '45';
 assert.throws(() => context.validateNumericFields(), /必须长于/);
 document.querySelector('[data-runtime="reply_ttl"]').value = '90';
+document.querySelector('[data-moderation-intake="batch_limit"]').value = '0';
+assert.throws(() => context.validateNumericFields(), /1–20/);
+document.querySelector('[data-moderation-intake="batch_limit"]').value = '8';
+document.querySelector('[data-runtime="collect_incomplete"]').value = '30';
+document.querySelector('[data-runtime="partition_gap"]').value = '30';
+assert.throws(() => context.validateNumericFields(), /新分区空闲间隔必须长于/);
+document.querySelector('[data-runtime="collect_incomplete"]').value = '20';
+document.querySelector('[data-runtime="partition_gap"]').value = '90';
+context.validateNumericFields();
 
 for (const [phase, label] of [['collecting', '收集'], ['queued', '模型队列'], ['rate_wait', '限流'], ['generating', '生成']]) {
   context.renderConversationProgress({ conversation: { phase, remaining: 8, messages: 3 }, model_queue: { waiting: 2, active: 1, cooldown_seconds: 10 } }, true);
@@ -162,5 +191,5 @@ const base = { group_id: 10001, created: Date.now() / 1000, summary: 'fake reply
   const stale = { ...base, id: 'stale', state: 'unsent', meta: { expires: Date.now() / 1000 - 1 } };
   assert(context.deliveryExpired(stale));
   const count = requests.length; await context.deliveryAction(stale, 'retry', '10001'); assert.equal(requests.length, count);
-  console.log('PASS: full inline syntax; group defaults/drafts; global model controls; offline save payload; ranges/timing; progress; expired and unknown delivery safeguards.');
+  console.log('PASS: full inline syntax; group defaults/drafts; model controls/input/reservoir; moderation intake defaults/save; offline save payload; ranges/timing/partitions; progress; expired and unknown delivery safeguards.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

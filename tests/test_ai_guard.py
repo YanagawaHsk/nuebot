@@ -93,7 +93,7 @@ bot.pending.clear()
 bot.receive(event('/鵺停止',uid=100000002,mid=3));assert bot.HALT.exists();bot.HALT.unlink()
 bot.receive(event('/鵺停止',uid=100000004,mid=4));assert not bot.HALT.exists();bot.pending.clear()
 # Learned text is user data, never a system message, even for legacy memories.
-with patch.object(memory_learning.Store,'supplement',return_value='LEGACY_STYLE_DATA'),patch.object(bot,'post') as post:
+with patch.object(memory_learning.Store,'supplement',return_value='本群学习记忆：'+json.dumps([{'style_notes':['LEGACY_STYLE_DATA'],'interests':[],'cautions':[]}])) ,patch.object(bot,'post') as post:
     post.return_value={'choices':[{'message':{'content':json.dumps({'speak':True,'messages':['好可爱'],'sticker_id':None})}}]}
     assert bot.generate()[0]==['好可爱']
     request=post.call_args.args[1];system=request['messages'][0]['content'];data=request['messages'][1]['content']

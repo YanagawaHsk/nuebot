@@ -15,8 +15,11 @@ import plugin_manager
 import delivery_queue
 import error_log
 import model_gate
+import model_reservoir
+import model_diagnostics
 import runtime_advice
 import memory_learning
+import member_memory
 import update_checker
 import panel_auth
 import ai_guard
@@ -124,13 +127,16 @@ def test_model(body):
     if c['disable_thinking']:payload['thinking']={'type':'disabled'}
     req=urllib.request.Request(c['base_url']+'/chat/completions',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+model['api_key'],'Content-Type':'application/json'})
     service=model_gate.service(model['base_url'],model['api_key'])
+    reservation=None;http_opened=False
     try:
         # Use the saved shared gate policy so a testing draft cannot loosen the
         # global concurrency/spacing controls. It is lower priority than chat.
         policy=settings.load()['model_control']
         with model_gate.acquire(service,c['group_id'],'learning',policy):
+            reservation=model_reservoir.reserve(service,model_reservoir.estimate_input(payload),16,policy,purpose='learning')
             model_gate.start_request(service,policy)
             timeout=min(10,policy['request_timeout']);deadline=time.monotonic()+timeout
+            model_reservoir.mark_started(reservation);http_opened=True
             with opener.open(req,timeout=timeout) as r:
                 if r.geturl()!=req.full_url:raise ValueError('RedirectRejected')
                 chunks=[];size=0
@@ -145,12 +151,15 @@ def test_model(body):
                     if size>65536:raise ValueError('ModelResponseTooLarge')
                     chunks.append(chunk)
                 data=json.loads(b''.join(chunks))
+                model_reservoir.settle(reservation,model_diagnostics.response_fields(data,getattr(r,'headers',None)))
             choices=data.get('choices') if isinstance(data,dict) else None
             message=choices[0].get('message') if isinstance(choices,list) and choices and isinstance(choices[0],dict) else None
             if not isinstance(message,dict) or not isinstance(message.get('content'),str) or not message['content'].strip():raise ValueError('EmptyReply')
         ok=True;code='HTTP200'
         return {'ok':True,'message':'固定短文本生成测试成功；未读取群聊，仅代表本次测试结果','synthetic':True,'ttl_seconds':error_log.PROBE_TTL}
     except Exception as exc:
+        if http_opened:model_reservoir.fail(reservation,http_status=exc.code if isinstance(exc,urllib.error.HTTPError) else None)
+        else:model_reservoir.abort_before_http(reservation)
         code=error_log.safe_code(error_log.fields(exc).get('code') or type(exc).__name__)
         raise ValueError(error_log.suggestion(code)) from None
     finally:
@@ -233,6 +242,27 @@ def resolve_delivery_marker(gid,ident,state):
     value['state']=state
     tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');shared_budget.replace_with_retry(tmp,path)
 
+def reconcile_confirmed_delivery(gid,ident):
+    """Bookkeeping only: reconfirmation must never issue another QQ send."""
+    shared_budget.reconcile_delivery(gid,ident)
+    delivery_queue.mark_settled(gid,ident,'budget')
+    row=delivery_queue.get(gid,ident)
+    receipt=row['meta'].get('plugin_settlement',{}).get('receipt',{})
+    if row['kind']=='plugin' and receipt and not delivery_queue.settlement_done(gid,ident,'plugin'):
+        engine=plugin_features.Engine(state_path=group_workers.directory(gid)/'plugin-state.json')
+        engine.confirmed(receipt,ident)
+        delivery_queue.mark_settled(gid,ident,'plugin')
+    if delivery_queue.claim_component(gid,ident,'telemetry'):
+        import logging
+        # Match the worker's bounded log format and use safe fixed fields only.
+        from logging.handlers import RotatingFileHandler
+        handler=RotatingFileHandler(group_workers.directory(gid)/'events.log',maxBytes=2*1024*1024,backupCount=2,encoding='utf-8')
+        try:
+            handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+            data={'stage':'confirmed','reason_key':'ReconciledConfirmed','count':1,'kind':row['kind']}
+            handler.emit(logging.LogRecord('nue-reconciliation',logging.INFO,'',0,'reply_health '+json.dumps(data),(),None))
+        finally:handler.close()
+
 def delivery_action(gid,ident,action,confirmed=False):
     if not group_workers.locked(group_workers.directory(gid)/'runner.lock'):delivery_queue.recover(gid)
     row=delivery_queue.get(gid,ident)
@@ -245,8 +275,8 @@ def delivery_action(gid,ident,action,confirmed=False):
     if action=='dismiss':
         delivery_queue.dismiss(gid,ident);return {'message':'已归档，不会发送。'}
     if action=='confirm_sent':
-        if row['state']!='unknown' or confirmed is not True:raise ValueError('请先确认这条消息已在QQ发出')
-        delivery_queue.mark(gid,ident,'confirmed');resolve_delivery_marker(gid,ident,'CONFIRMED')
+        if row['state'] not in ('unknown','confirmed') or confirmed is not True:raise ValueError('请先确认这条消息已在QQ发出')
+        delivery_queue.mark(gid,ident,'confirmed');reconcile_confirmed_delivery(gid,ident);resolve_delivery_marker(gid,ident,'CONFIRMED')
         return {'message':'已标记为已发送，不会重发；可按需重新启动机器人。'}
     if action=='confirm_unsent':
         delivery_queue.confirm_unsent(gid,ident,confirmed)
@@ -257,7 +287,7 @@ def delivery_action(gid,ident,action,confirmed=False):
         path=group_workers.directory(gid)/'last-send.json'
         last=json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
         if last.get('delivery_id')==ident and last.get('state')=='CONFIRMED' and isinstance(last.get('receipt'),dict) and last['receipt'].get('message_id') is not None:
-            delivery_queue.mark(gid,ident,'confirmed',receipt=last['receipt']['message_id']);return {'message':'本机已有成功回执，已确认发送。'}
+            delivery_queue.mark(gid,ident,'confirmed',receipt=last['receipt']['message_id']);reconcile_confirmed_delivery(gid,ident);return {'message':'本机已有成功回执，已确认发送。'}
         if onebot('get_login_info',{}).get('user_id')!=BOT_ID:raise ValueError('当前QQ账号不匹配')
         payload=delivery_queue.get(gid,ident,payload=True)
         if any(p.get('type') not in ('text','reply') for p in payload['segments']):return {'message':'图片消息不能可靠自动比对；请在QQ核对后选择确认已发送、确认未发送并放弃，或确认未发出并重发。'}
@@ -271,7 +301,7 @@ def delivery_action(gid,ident,action,confirmed=False):
             if not isinstance(segments,list) or any(p.get('type') not in ('text','reply') for p in segments):continue
             if expected_reply and [str(p.get('data',{}).get('id')) for p in segments if p.get('type')=='reply']!=expected_reply:continue
             if ''.join(str(p.get('data',{}).get('text','')) for p in segments if p.get('type')=='text')==expected:
-                delivery_queue.mark(gid,ident,'confirmed',receipt=event.get('message_id'));resolve_delivery_marker(gid,ident,'CONFIRMED')
+                delivery_queue.mark(gid,ident,'confirmed',receipt=event.get('message_id'),sent_at=event['time']);reconcile_confirmed_delivery(gid,ident);resolve_delivery_marker(gid,ident,'CONFIRMED')
                 return {'message':'QQ近期记录中已有机器人发送的相同文字，已确认，不再重发。'}
         return {'message':'最近40条QQ记录中未找到对应消息；这不能证明没有发出，请在QQ人工核对后再选择。'}
     raise ValueError('操作不正确')
@@ -329,9 +359,15 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 query=parse_qs(urlsplit(self.path).query);gid=self.learning_group(query.get('group_id',['0'])[0]);offset=int(query.get('offset',['0'])[0])
                 if not 0<=offset<=2000:raise ValueError('日志页码不正确')
-                rows=memory_learning.Store(gid).entries()
-                return self.reply({'entries':rows[offset:offset+50],'total':len(rows),'offset':offset})
+                state=query.get('state',['all'])[0];search=query.get('q',[''])[0]
+                return self.reply(memory_learning.Store(gid).page(offset,state,search))
             except (ValueError,OSError):return self.reply({'error':'无法读取该群学习记录，请检查群号'},400)
+        if urlsplit(self.path).path=='/api/member-memory':
+            try:
+                query=parse_qs(urlsplit(self.path).query);gid=self.learning_group(query.get('group_id',['0'])[0])
+                rows=member_memory.Store(gid).entries()
+                return self.reply({'entries':rows,'total':len(rows)})
+            except (ValueError,TypeError,OSError):return self.reply({'error':'无法读取该群群友记忆，请检查群号或本机存储'},400)
         if urlsplit(self.path).path in ('/api/errors','/api/deliveries'):
             try:
                 query=parse_qs(urlsplit(self.path).query);gid=self.learning_group(query.get('group_id',['0'])[0]);offset=int(query.get('offset',['0'])[0])
@@ -408,7 +444,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(update_checker.state())
             if self.path=='/api/memory':
                 gid=self.learning_group(body.get('group_id',0))
+                if body.get('action')=='purge' and body.get('confirmed') is not True:raise ValueError('请确认彻底删除这条记忆')
                 memory_learning.Store(gid).update(body.get('id',''),body.get('action'),body.get('value'))
+                if body.get('action') in ('edit','delete','purge'):member_memory.Store(gid).remove_source(body.get('id',''))
+                self.audit_target=str(gid)+':'+str(body.get('id',''))
+                return self.reply({'ok':True})
+            if self.path=='/api/member-memory':
+                gid=self.learning_group(body.get('group_id',0));store=member_memory.Store(gid)
+                if body.get('action')=='save':
+                    value=body.get('value')
+                    profile=store.upsert(value,create_only=isinstance(value,dict) and value.get('expected_revision') is None)
+                    self.audit_target=str(gid)+':'+profile['user_id']
+                    return self.reply({'ok':True,'profile':profile})
+                if body.get('action')=='purge' and body.get('confirmed') is not True:raise ValueError('请确认彻底删除这位群友的记忆')
+                store.update(body.get('user_id'),body.get('action'),body.get('expected_revision'))
+                self.audit_target=str(gid)+':'+str(body.get('user_id',''))
                 return self.reply({'ok':True})
             if self.path=='/api/settings':
                 with SAVE_LOCK:saved,restarting=save_configuration(body)

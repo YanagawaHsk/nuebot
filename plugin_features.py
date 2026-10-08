@@ -1,11 +1,31 @@
 """Native adapters for imported NcatBot features; never imports supplied scripts."""
 import hashlib,json,random,re,time,unicodedata,urllib.request,urllib.parse,threading
 import plugin_manager
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 ASSETS=ROOT/'plugin-assets'
 TZ=timezone(timedelta(hours=8))
+
+@contextmanager
+def _state_guard(path):
+    """Serialize receipt settlement across worker and panel processes."""
+    import msvcrt
+    guard=path.with_suffix(path.suffix+'.lock')
+    with guard.open('a+b') as handle:
+        # Windows permits byte-range locks past EOF. Initializing byte zero
+        # before locking races another process that already owns that byte.
+        end=time.monotonic()+5
+        while True:
+            try:handle.seek(0);msvcrt.locking(handle.fileno(),msvcrt.LK_NBLCK,1);break
+            except OSError:
+                if time.monotonic()>=end:raise TimeoutError('StorageError')
+                time.sleep(.05)
+        try:yield
+        finally:handle.seek(0);msvcrt.locking(handle.fileno(),msvcrt.LK_UNLCK,1)
+
 CATALOG=[
  {'id':'dice','name':'骰子与COC判定','sources':['DicePlugin'],'description':'投骰与技能判定，最多10个100面骰子','commands':'.r3d6；.ra侦察75','status':'ready'},
  {'id':'jrrp','name':'今日人品','sources':['JRRPChecker'],'description':'同一群友同一天得到稳定的1–100结果，仅娱乐','commands':'jrrp；今日人品','status':'ready'},
@@ -130,13 +150,30 @@ class Engine:
     def save(self):
         today=datetime.now(TZ).strftime('%Y-%m-%d')
         self.state['usage']={k:v for k,v in self.state['usage'].items() if k.startswith(today)}
-        tmp=self.path.with_suffix('.tmp');tmp.write_text(json.dumps(self.state),encoding='utf-8');tmp.replace(self.path)
-    def confirmed(self,result):
+        import shared_budget
+        temporary=None
+        try:
+            with tempfile.NamedTemporaryFile(dir=self.path.parent,prefix='plugin-state-',suffix='.tmp',delete=False) as stream:
+                temporary=Path(stream.name);stream.write(json.dumps(self.state).encode('utf-8'))
+            shared_budget.replace_with_retry(temporary,self.path)
+        finally:
+            if temporary is not None and temporary.exists():temporary.unlink()
+    def confirmed(self,result,delivery_id=None):
         if not result.get('quota_key'):return
-        with self.lock:
+        with self.lock,_state_guard(self.path):
+            # Quota and the receipt key are committed together. Re-reading also
+            # picks up an administrator's reconciliation before a later send.
+            if delivery_id:
+                try:self.state=json.loads(self.path.read_text(encoding='utf-8'))
+                except FileNotFoundError:self.state={'usage':{},'last':{}}
+                settled=self.state.setdefault('settled_deliveries',{})
+                if delivery_id in settled:return False
+                settled[delivery_id]=time.time()
+                self.state['settled_deliveries']={k:v for k,v in settled.items() if v>time.time()-7*86400}
             key=result['quota_key'];self.state['usage'][key]=self.state['usage'].get(key,0)+1
             if result.get('selected'):self.state['last'][result['last_key']]=result['selected']
             self.save()
+            return True
     def choose(self,items,group,key):
         lastkey=str(group)+':'+key;previous=self.state['last'].get(lastkey)
         candidates=[item for item in items if str(item.get('id',item.get('name','')))!=previous] or items

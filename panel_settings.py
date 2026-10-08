@@ -3,13 +3,14 @@ import plugin_features
 import memory_learning
 import ai_guard
 import model_gate
+import moderation_intake
 from local_identity import BOT_ID,OWNER_ID,DEFAULT_GROUP
 from pathlib import Path
 from urllib.parse import urlsplit
 ROOT=Path(__file__).resolve().parent
 PATH=ROOT/'settings.json'
-RANGES={'collect_quiet':(5,60),'collect_incomplete':(5,90),'collect_max':(15,120),'reply_ttl':(30,180),'topic_gap':(60,900),'retry_attempts':(1,5),'retry_base':(3,60),'context_age':(60,1800),'context_messages':(1,40),'output_tokens':(32,4096),'messages_hour':(1,120),'model_calls_hour':(1,360),'cooldown_seconds':(0,3600),'delay_min':(0,60),'delay_max':(0,90),'mention_probability':(0,1),'topic_interval':(300,86400),'sticker_hour':(0,30),'sticker_interval':(0,3600)}
-DEFAULT_RUNTIME={'collect_quiet':12,'collect_incomplete':20,'collect_max':45,'reply_ttl':120,'topic_gap':120,'context_age':300,'auto_retry':True,'retry_attempts':3,'retry_base':5,'context_messages':15,'output_tokens':128,'messages_hour':30,'model_calls_hour':120,'cooldown_seconds':120,'delay_min':8,'delay_max':12,'mention_probability':.9,'topic_enabled':True,'topic_interval':3600,'stickers_enabled':True,'sticker_hour':3,'sticker_interval':600,'challenge_filter':True,'catchphrase_filter':True,'chat_enabled':True,'mention_only':False}
+RANGES={'collect_quiet':(5,60),'collect_incomplete':(5,90),'collect_max':(15,120),'reply_ttl':(30,180),'topic_gap':(60,900),'partition_gap':(30,900),'partition_span':(60,1800),'reference_age':(30,1800),'retry_attempts':(1,5),'retry_base':(3,60),'context_age':(60,1800),'context_messages':(1,40),'output_tokens':(32,4096),'messages_hour':(1,120),'model_calls_hour':(1,360),'cooldown_seconds':(0,3600),'delay_min':(0,60),'delay_max':(0,90),'mention_probability':(0,1),'topic_interval':(300,86400),'sticker_hour':(0,30),'sticker_interval':(0,3600)}
+DEFAULT_RUNTIME={'collect_quiet':12,'collect_incomplete':20,'collect_max':45,'reply_ttl':120,'topic_gap':120,'context_age':300,'time_partition_enabled':True,'partition_gap':90,'partition_span':300,'reference_age':180,'auto_retry':True,'retry_attempts':3,'retry_base':5,'context_messages':15,'output_tokens':128,'messages_hour':30,'model_calls_hour':120,'cooldown_seconds':120,'delay_min':8,'delay_max':12,'mention_probability':.9,'topic_enabled':True,'topic_interval':3600,'stickers_enabled':True,'sticker_hour':3,'sticker_interval':600,'challenge_filter':True,'catchphrase_filter':True,'chat_enabled':True,'mention_only':False}
 DEFAULT_RELATIONSHIPS=[]
 
 def connection_defaults():
@@ -37,8 +38,14 @@ def validate_runtime(value):
         if type(v) not in (int,float) or not low<=v<=high or (key!='mention_probability' and type(v) is not int):raise ValueError(f'{key} 超出可设置范围')
     if runtime['collect_incomplete']<runtime['collect_quiet'] or runtime['collect_max']<runtime['collect_incomplete'] or runtime['reply_ttl']<=runtime['collect_max']:raise ValueError('等待时长应满足：停顿 ≤ 未完句 ≤ 长段收集 < 回复有效期')
     if runtime['delay_max']<runtime['delay_min']:raise ValueError('最长等待不能小于最短等待')
-    for key in ('auto_retry','topic_enabled','stickers_enabled','challenge_filter','catchphrase_filter','chat_enabled','mention_only'):
+    for key in ('auto_retry','topic_enabled','stickers_enabled','challenge_filter','catchphrase_filter','chat_enabled','mention_only','time_partition_enabled'):
         if type(runtime.get(key)) is not bool:raise ValueError('开关设置不正确')
+    # Older profiles may legally wait 90 seconds for an unfinished message.
+    # Give their missing partition setting enough room, while preserving every
+    # explicit partition value so invalid user input is still rejected below.
+    if 'partition_gap' not in value and runtime['time_partition_enabled']:
+        runtime['partition_gap']=max(DEFAULT_RUNTIME['partition_gap'],runtime['collect_incomplete']+1)
+    if runtime['time_partition_enabled'] and runtime['partition_gap']<=runtime['collect_incomplete']:raise ValueError('启用时间分区时，新分区空闲间隔必须长于未完句等待')
     return {k:runtime[k] for k in DEFAULT_RUNTIME}
 
 def runtime_for(value,group):
@@ -93,7 +100,7 @@ def validate(value):
     groups=validate_plugin_groups(value.get('plugin_groups'),value.get('plugins',{}),connection['group_id'])
     learning=memory_learning.validate_groups(value.get('learning_groups',{}))
     runtime_groups=validate_runtime_groups(value.get('runtime_groups',{}),runtime,{row['group_id'] for row in subscriptions}|set(groups)|set(learning)|{connection['group_id']})
-    return {'model_control':model_gate.validate(value.get('model_control',{})),'runtime_groups':runtime_groups,'account_limits':validate_account_limits(value.get('account_limits'),runtime),'security':ai_guard.validate(value.get('security',{})),'version':2,'learning_groups':learning,'groups':subscriptions,'plugin_groups':groups,'plugins':groups.get(str(connection['group_id']),plugin_features.validate({})),'relationships':relationships,'connection':connection,'persona':persona,'runtime':{k:runtime[k] for k in DEFAULT_RUNTIME},'moderation':fixed,'keywords':clean}
+    return {'moderation_intake':moderation_intake.validate(value.get('moderation_intake')),'model_control':model_gate.validate(value.get('model_control',{})),'runtime_groups':runtime_groups,'account_limits':validate_account_limits(value.get('account_limits'),runtime),'security':ai_guard.validate(value.get('security',{})),'version':2,'learning_groups':learning,'groups':subscriptions,'plugin_groups':groups,'plugins':groups.get(str(connection['group_id']),plugin_features.validate({})),'relationships':relationships,'connection':connection,'persona':persona,'runtime':{k:runtime[k] for k in DEFAULT_RUNTIME},'moderation':fixed,'keywords':clean}
 
 def validate_subscriptions(rows,primary):
     if rows is None:rows=[{'group_id':primary,'enabled':True}]
