@@ -1,0 +1,615 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>鵺 · 控制室</title><style>
+:root{--bg:#f6f4fb;--ink:#252137;--muted:#797388;--purple:#7154c6;--line:#e8e3f0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 'Microsoft YaHei',sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer;border:1px solid var(--line);border-radius:12px;background:white;padding:9px 16px;color:var(--ink)}button:hover{border-color:var(--purple)}button:disabled{cursor:default;opacity:.55}button:disabled:hover{border-color:var(--line)}.delivery-confirm{display:flex;gap:10px;align-items:flex-start;margin:16px 0}.delivery-confirm input{flex:none;margin-top:3px}.delivery-confirm small{display:block}button.primary{background:var(--purple);color:white;border-color:var(--purple)}button.danger{color:#b64365}header{padding:24px 40px;background:white;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;align-items:center}h1{margin:0;font-size:25px;letter-spacing:1px}small,.muted{color:var(--muted)}.badge{display:inline-block;font-size:12px;background:#ede7ff;color:var(--purple);padding:4px 10px;border-radius:20px}.layout{max-width:1300px;margin:28px auto;display:grid;grid-template-columns:210px 1fr;gap:26px;padding:0 28px}nav{position:sticky;top:24px;align-self:start}nav button{width:100%;text-align:left;border:0;background:transparent;margin-bottom:6px;padding:13px 18px}nav button.active{background:var(--purple);color:white}.nav-note{padding:18px;font-size:12px;color:var(--muted)}.hero{background:#302641;color:white;border-radius:22px;padding:26px 30px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.hero h2{margin:0 0 5px;font-size:23px}.hero small{color:#c9c0db}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}.stat{background:white;border:1px solid var(--line);border-radius:16px;padding:16px 20px}.stat strong{display:block;font-size:25px}.stat small{font-size:12px}.section{display:none}.section.active{display:block}.card{background:white;border:1px solid var(--line);border-radius:20px;padding:25px;margin-bottom:18px}h2{font-size:20px;margin:0 0 7px}h3{font-size:16px;margin:0 0 14px}p{margin:5px 0 20px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}label{display:block;font-weight:500}label small{display:block;font-weight:400;margin-top:5px}input[type=number],input[type=text],input[type=password],textarea,select{border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;background:#fbfaff;color:var(--ink);margin-top:7px;outline:none}input:focus,textarea:focus,select:focus{border-color:var(--purple)}textarea{resize:vertical}#persona{min-height:430px;line-height:1.8}.toggle{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-bottom:1px solid var(--line)}input[type=checkbox]{accent-color:var(--purple);width:20px;height:20px}.note{background:#f5f0ff;border-radius:12px;padding:14px 18px;color:#655084;font-size:13px;margin-top:18px}.rule{border:1px solid var(--line);border-radius:15px;padding:18px;margin-bottom:15px}.rule-head{display:flex;gap:14px;align-items:center;margin-bottom:12px}.rule-head input[type=text]{margin:0;flex:1}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.footer{position:sticky;bottom:14px;background:#ffffffed;border:1px solid var(--line);box-shadow:0 5px 25px #35245112;border-radius:16px;padding:15px 20px;display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:20px}#toast{position:fixed;right:24px;bottom:95px;background:#302641;color:white;border-radius:14px;padding:13px 22px;display:none;max-width:460px;z-index:10}.result{white-space:pre-wrap;padding:14px;background:var(--bg);border-radius:12px;margin-top:12px}a{color:var(--purple)}@media(max-width:850px){header{padding:18px}.layout{display:block;padding:0 14px;margin-top:14px}nav{position:static;display:flex;overflow:auto;margin-bottom:15px}nav button{white-space:nowrap;width:auto}.nav-note{display:none}.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.hero{padding:22px}.footer{flex-wrap:wrap}}
+
+.relationship-table{width:100%;min-width:790px;border-collapse:collapse;font-size:13px}.relationship-table th{text-align:left;padding:10px;color:var(--muted);background:#f6f3fc;border-bottom:1px solid var(--line);white-space:nowrap}.relationship-table td{padding:8px;vertical-align:top;border-bottom:1px solid var(--line)}.relationship-table input[type=text],.relationship-table textarea{margin:0;padding:8px;font-size:13px;min-width:75px}.relationship-table textarea{min-width:130px}.relationship-table td:nth-child(2){min-width:130px}.relationship-table td:nth-child(4){min-width:120px}.relationship-table button{padding:7px 10px;font-size:12px}
+#recent-events{max-height:300px;overflow:auto;font-size:13px}#reply-reason{border-left:3px solid var(--purple)}#recent-events{max-height:300px;overflow:auto;font-size:13px}#reply-reason{border-left:3px solid var(--purple)}#plugin-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:22px}#plugin-cards .card{margin-bottom:0}#plugin-cards details{margin:16px 0}summary{cursor:pointer;color:var(--purple)}@media(max-width:1100px){#plugin-cards{grid-template-columns:1fr}}
+[hidden]{display:none!important}.nav-heading{font-size:11px;letter-spacing:2px;color:#898198;padding:14px 16px 7px}nav button{padding:9px 15px;margin-bottom:3px}.layout{max-width:1500px;grid-template-columns:200px minmax(0,1fr)}.workspace-bar{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 24px;border:1px solid #dcd2ee;background:#fff;border-radius:18px;margin-bottom:16px}.workspace-bar label{min-width:230px}.scope-note{color:#7254b5;font-size:13px}.global-scope{color:#826538}.selected-group{background:#f3edff}.relationship-table td button{padding:5px 9px;font-size:12px;margin:2px}.relationship-table td{vertical-align:middle}.hero{padding:20px 26px;margin-bottom:16px}.stats{margin-bottom:18px}.stat{padding:13px 16px}.stat strong{font-size:23px}nav{max-height:calc(100vh - 35px);overflow:auto}#multi-rows td{min-width:75px}#multi-rows td:first-child{min-width:140px}#multi-rows td:last-child{min-width:120px}#scope-note{max-width:650px}@media(max-width:850px){.layout{display:block}.workspace-bar{flex-direction:column;align-items:stretch;gap:8px}.workspace-bar label{min-width:0}.nav-heading{display:none}nav{max-height:none}.hero h2{font-size:20px}.stat{padding:12px}.stats{gap:8px}}
+#snow-frame{display:block;width:100%;height:max(640px,calc(100vh - 280px));border:1px solid var(--line);border-radius:16px;background:white;margin-top:18px}.snow-help{margin-bottom:10px}@media(max-width:850px){#snow-frame{height:760px}}
+.diagnostic-card{border-left:3px solid #c78697}.diagnostic-card[data-tone=normal]{border-left-color:#6eaa88}.diagnostic-card[data-tone=waiting]{border-left-color:#caa163}.diagnostic-card[data-tone=manual]{border-left-color:#ba526d}.diagnostic-card p{margin:8px 0}.diagnostic-card .badge{font-weight:500}
+.reply-health-actions{justify-content:space-between;margin:16px 0}.reply-health-actions label{min-width:180px}.reply-health-actions select{margin-top:4px}.reply-flow,.reply-outcomes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}.reply-stage{padding:16px;background:#f7f3ff;border:1px solid var(--line);border-radius:14px}.reply-stage strong{display:block;font-size:25px;line-height:1.3;margin:6px 0}.reply-stage[data-missing=true] strong{font-size:18px;color:var(--muted)}.reply-outcomes .reply-stage{background:#faf9fc;padding:12px}.reply-outcomes strong{font-size:21px}.reply-health-table{min-width:630px}.reply-health-table td{vertical-align:top}.reply-health-table td:first-child{width:45%}.reply-health-table small{display:block}.reply-health-list .result{margin:10px 0}.reply-health-list .result p:last-child{margin-bottom:0}@media(max-width:850px){.reply-flow,.reply-outcomes{grid-template-columns:repeat(2,minmax(0,1fr))}.reply-health-actions{align-items:stretch}}
+</style></head><body>
+<header><div><h1>鵺 <span style="color:#a39ab5">/</span> 控制室 <span class="badge">本机管理</span> <span class="badge" id="app-version">v__VERSION__</span></h1><small>每个群有自己的节奏与记忆</small></div><div class="actions"><span id="auth-who" class="badge">主管理员</span><button id="auth-logout">退出登录</button><button id="stop" class="danger">停止机器人</button><button id="start">启动机器人</button></div></header>
+<div class="layout"><nav id="nav"><div class="nav-heading">群工作区</div><button data-tab="groups-tab" class="active">群总览</button><button data-tab="rhythm-tab">聊天节奏与记忆</button><button data-tab="plugins-tab">本群插件</button><button data-tab="health-tab">本群运行与诊断</button><button data-tab="errors-tab">错误日志与重发</button><div class="nav-heading">全局角色与规则</div><button data-tab="persona-tab">人设与表达</button><button data-tab="relationships-tab">角色关系</button><button data-tab="rules-tab">关键词回应</button><button data-tab="skynet-tab">天网管理员</button><button data-tab="security-tab">AI安全防护</button><div class="nav-heading">系统管理</div><button data-tab="snowluma-tab" data-admin-only>QQ / SnowLuma</button><button data-tab="connection-tab">模型与连接</button><button data-tab="access-tab">账号与权限</button><button data-tab="tools-tab">备份与更新</button><div class="nav-note">QQ __BOT_ID__<br><span id="nav-group"></span><br>切换群保留草稿<br>点击保存后统一应用</div></nav><main>
+<div class="hero"><div><h2>群工作区</h2><small id="connection">正在连接机器人…</small></div><span class="badge" id="state">读取中</span></div>
+<div class="workspace-bar"><div><h2 id="workspace-title">选择当前群</h2><div id="scope-note" class="scope-note"></div></div><label>当前群<select id="workspace-group" aria-label="当前群"></select></label></div><div class="stats"><div class="stat"><small>本群已保存的记忆</small><strong id="s-memory">—</strong><small id="memory-live"></small><button data-edit="context_messages" style="margin-top:9px;padding:3px 9px;font-size:12px">调整记忆</button></div><div class="stat"><small>本群已保存的输出上限</small><strong id="s-token">—</strong><small id="token-live"></small><button data-edit="output_tokens" style="margin-top:9px;padding:3px 9px;font-size:12px">调整输出上限</button></div><div class="stat"><small>本群消息 / 每小时上限</small><strong id="s-rate">—</strong></div><div class="stat"><small>天网 / 群权限</small><strong id="s-skynet" style="font-size:19px">—</strong></div></div>
+<section id="persona-tab" class="section"><div class="card"><h2>人设与表达</h2><p class="muted">调整她的性格、兴趣、说话习惯和互动边界。运行参数以其他页面的设置为准。</p><textarea id="persona" aria-label="人设提示词"></textarea><div class="actions" style="margin-top:12px"><small id="persona-count"></small><button id="persona-download">下载当前人设</button></div></div></section>
+<section id="rhythm-tab" class="section"><div class="card"><h2>记忆与接话节奏</h2><p class="muted">此页的聊天频率、上下文、回复上限和学习设置只影响顶部选中的群。切换群时，未保存修改会留在各自草稿中。</p><div class="toggle"><label>避免重复“正体不明”<small>最近记忆中自己使用过时，过滤再次使用这句的回复。</small></label><input type="checkbox" data-runtime="catchphrase_filter"></div><div class="toggle"><label>跳过刁难式算法题<small>保留日常算法学习闲聊，跳过完整复杂考题。</small></label><input type="checkbox" data-runtime="challenge_filter"></div><div class="grid" id="runtime-fields"></div><div class="note">输出上限包含回复所需的格式字符。太低可能导致生成失败；建议从 128–256 开始。更改记忆上限后，增大窗口从后续消息逐渐积累，缩小立即生效。</div></div><div class="card"><h2>先等群友说完</h2><p class="muted">同一话题的连续发言会先收集再接话；收到补充时，会重新检查正在排队或生成的回复。回复过期、话题变化或停止运行后，旧内容不再发送。</p><div class="grid" id="collection-fields"></div><p class="note">时长须满足：停顿等待 ≤ 未完句等待 ≤ 长段收集 < 回复有效期。长段收集是等待上限的目标，仍会等短暂停顿，不会强行打断连续发言。上下文同时受记忆条数、有效时长和当前话题限制。</p><div class="toggle"><label>临时故障自动重试<small>仅在回复仍有效时重试模型临时故障或明确尚未发送的内容；每次等待逐步延长。发送结果不明确时必须人工核验，不能自动重发。</small></label><input type="checkbox" data-runtime="auto_retry"></div><div class="grid" id="retry-fields" style="margin-top:20px"></div></div><div class="card"><h3>主动话题与表情包</h3><div class="toggle"><label>允许主动抛话题<small>仅白天 8–23 点、群聊安静但近期有人发言时考虑。</small></label><input type="checkbox" data-runtime="topic_enabled"></div><div class="toggle"><label>允许使用现有表情包<small>使用已经核对并缓存的表情，不把图片传给模型。</small></label><input type="checkbox" data-runtime="stickers_enabled"></div><div class="grid" id="extra-fields" style="margin-top:20px"></div></div><div class="card"><h2>记忆日志 · 群聊学习</h2><p class="muted">每次成功发言前10条、后10条消息收齐后，由当前模型提炼表达习惯、话题兴趣和互动改进。分条回复逐条取样，图片只记文字占位，不上传图片。仅使用本群消息，学习样本独立于上方聊天上下文长度。</p><label hidden>学习日志所属群<select id="memory-group"></select></label><div class="toggle"><label>启用本群记忆学习<small>会额外将21条文字消息（含机器人反应）发往当前配置的模型 API，消耗模型调用额度。其他群不会自动开启。</small></label><input id="memory-enabled" type="checkbox" aria-label="启用本群记忆学习"></div><div class="toggle"><label>自动应用新的学习结果<small>作为本群语言与兴趣补充，不覆盖固定人设、身份、关系、权限和天网规则。关闭后新结果仅入日志，可手动勾选应用。</small></label><input id="memory-auto" type="checkbox" aria-label="自动应用新的学习结果"></div><div class="grid"><label>提炼输出 token 上限<input id="memory-tokens" type="number" min="128" max="2048" step="1"></label><label>保留日志条数<input id="memory-records" type="number" min="50" max="2000" step="1"></label><label>参与人设补充的最近记录数<input id="memory-active" type="number" min="1" max="100" step="1"></label></div><p class="note">设置需点“保存并应用”。学习在后台单独进行，不追加群发言；与聊天、天网共享每小时模型调用上限。前后消息不足10条则不提炼，不用虚构补齐。模型限流或临时网络故障会保留样本，逐步延长等待，最多尝试5次；不会重复写入同一次成功结果。原始采样只在内存中（最多30份排队），停机或关闭学习后不补采样。日志只存模型总结和机器人当时的短回复；超过保留条数时最旧记录自动淘汰。移除的记录可在保留期限内恢复。停止学习后不再应用学习补充。</p><div class="actions"><button id="memory-refresh">刷新学习日志</button><button id="memory-prev">上一页</button><button id="memory-next">下一页</button></div><p id="memory-health" class="note" role="status">正在读取本群采样状态…</p><p id="memory-count" class="muted">尚未读取</p><div id="memory-log"></div></div></section>
+<section id="skynet-tab" class="section"><div class="card"><h2>天网管理员</h2><p class="muted">宽松群聊秩序：处理明确攻击、威胁、骚扰、恶意刷屏、露骨色情和极端血腥。</p><div class="toggle"><label>开启天网文字检测<small>仅查看本群最近文字上下文，未查看的图片不判定。</small></label><input type="checkbox" data-mod="enabled"></div><div class="toggle"><label>发送违规警告<small>只有成功发送的警告才计数，也计入每小时消息上限。</small></label><input type="checkbox" data-mod="warnings_enabled"></div><div class="toggle"><label>允许个人禁言<small>达到警告次数后再次违规，并核实管理员权限，才执行。</small></label><input type="checkbox" data-mod="punishments_enabled"></div><div class="grid" id="mod-fields" style="margin-top:20px"></div><div class="note">普通政治讨论、非露骨成年虚构角色内容和自愿轻度打趣不处罚。群主、管理员及受保护账号不自动处理。全群禁言保持关闭；回执不明时停止操作，不自动重试。</div></div>
+<div class="card"><h2>送入模型的审核筛选</h2><p class="muted">所有参与群共用这些设置。先筛选需要关注的文字，再交给模型结合本群上下文判断；筛选本身不发送警告、不执行禁言，也不认定违规。</p><div class="toggle"><label>优先筛选风险候选<small>开启后优先复核疑似攻击、威胁、恶意刷屏等文字，并按下方节奏抽检普通文字。关闭后将可审核文字交给模型。</small></label><input type="checkbox" data-moderation-intake="risk_screening" aria-label="优先筛选风险候选"></div><div class="grid" id="moderation-intake-fields"></div><p class="note">普通政治讨论、非露骨成年虚构角色内容和自愿轻度打趣仍按原有宽松规则判断。候选表示需要复核，抽检表示普通文字样本；两者都不代表违规。去重只减少短期内重复的审核输入。</p><p id="moderation-intake-progress" class="result" role="status">正在读取顶部当前群的审核筛选计数…</p><small>计数按顶部当前群显示，只统计本次后台启动以来的筛选过程，不显示群聊文字；修改后点击“保存并应用”。</small></div></section>
+<section id="rules-tab" class="section"><div class="card"><h2>关键词固定回应</h2><p class="muted">规则按从上到下的顺序匹配，第一条命中生效。固定回应同样受频率和冷却限制。</p><div id="rules"></div><button id="add-rule">＋ 添加规则</button></div><div class="card"><h3>试匹配</h3><div class="grid"><label>模拟群友 QQ<input type="text" id="test-user" value="__OWNER_ID__"></label><label>模拟文字<input type="text" id="test-text" value="欺负我"></label></div><div class="actions" style="margin-top:15px"><label><input type="checkbox" id="test-mention"> 这条消息 @ 了机器人</label><button id="preview">试匹配</button></div><div class="result" id="preview-result">只在本机试匹配，不向 QQ 发送消息。</div></div></section>
+<section id="relationships-tab" class="section"><div class="card"><h2>角色关系 · 特殊对待</h2><p class="muted">按真实 QQ 号识别群友，分别设置关系、称呼与互动方式。它会随上下文交给机器人，不依赖群友自称。</p><div style="overflow-x:auto"><table class="relationship-table"><thead><tr><th>启用</th><th>QQ号</th><th>名字</th><th>关系</th><th>称呼</th><th>相处方式</th><th>操作</th></tr></thead><tbody id="relationships"></tbody></table></div><button id="add-relationship" style="margin-top:18px">＋ 添加特殊关系</button><div class="note">已预设创造者为“妈妈（创造者）”。称呼自然偶尔使用，不必每句重复；这是角色关系设定。特殊关系只改变聊天方式，不授予管理权限，也不自动免除天网处理。需要确定的关键词回应请在“关键词回应”页面设置。</div></div></section>
+<section id="snowluma-tab" class="section" data-admin-only><div class="card"><h2>QQ / SnowLuma 控制台</h2><p class="muted snow-help">在这里管理 QQ 接入与 SnowLuma。鵺的模型、人设和群聊天设置仍在对应页面保存；两个控制台各自保留登录与未保存修改。</p><div class="actions"><button id="snow-check">重新检查连接</button><button id="snow-refresh">刷新 QQ 控制台</button></div><p id="snow-status" class="result" role="status">打开此页后检查 QQ 控制台连接。</p><p id="snow-offline" class="note" hidden>SnowLuma 尚未连接。请在运行 QQ 接入服务的电脑上打开 SnowLuma 官方控制台，再点击“重新检查连接”。本页不会自动启动 QQ 接入或机器人。</p><p class="note">远程管理时，这里访问的是托管电脑上的 SnowLuma，不是管理电脑的 5099 端口。控制台需要独立登录，主管理员可用；登录信息不在两个网页之间共享。切换页面会保留 QQ 控制台状态，刷新会丢弃该页未保存修改。</p><iframe id="snow-frame" title="SnowLuma QQ 接入控制台" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" referrerpolicy="no-referrer" hidden></iframe></div></section><section id="connection-tab" class="section"><div class="card"><h2>模型 API</h2><p class="muted">使用兼容 chat/completions 的模型服务。填基础地址，页面会自动追加接口路径。</p><div class="grid"><label>API 基础地址<input type="text" id="api-url" placeholder="https://api.deepseek.com"></label><label>模型名称<input type="text" id="api-model" placeholder="deepseek-flash"></label></div><label style="margin-top:18px">API 密钥<input type="password" id="api-key" autocomplete="new-password" placeholder="留空保留当前密钥"><small id="key-state">密钥状态读取中…</small></label><div class="toggle"><label>发送关闭思考的参数<small>DeepSeek 可保持开启；若其他服务不支持 thinking 参数，请关闭。</small></label><input type="checkbox" id="api-thinking" aria-label="发送关闭思考的参数"></div><div class="actions" style="margin-top:18px"><button id="test-model">测试模型连接</button><small>发送固定短文本，消耗少量模型额度；不读取群聊。所有群共用队列，每30秒最多测试一次。</small></div><div class="result" id="model-result">尚未测试</div><div class="note">切换API地址时需重新填写对应密钥。密钥只保存在本机，不回显、不进入导出配置。切换连接会停止并重启正在运行的机器人。</div></div><div class="card"><h2>所有群共用的模型排队</h2><p class="muted">这些设置影响所有参与群的聊天、天网和记忆提炼。各群共用模型服务时统一排队，优先响应接话；服务限流时共同等待恢复。</p><div class="grid" id="model-control-fields"></div><p id="model-control-progress" class="result" role="status">启动机器人后显示模型队列状态。</p><p class="note">默认同时生成 1 个请求，至少间隔 2 秒。排队超过等待上限或回复有效期便放弃旧回复；实际请求超过超时上限会结束等待。提高并发可能更容易遇到服务限流。这里不展示模型密钥或请求正文。</p></div><div class="card"><h2>接入 QQ 群</h2><p class="muted">选择默认显示群；多群同时参与请在“群总览”设置，各群插件在“插件功能”设置。每群的上下文和警告计数分别保存。</p><div class="grid"><label>目标群号<input type="number" id="group-id" min="10000" max="999999999999"></label><label>已加入的群<select id="group-select"><option value="">先刷新群列表</option></select></label></div><div class="actions" style="margin-top:18px"><button id="refresh-groups">刷新已加入的群</button><small id="group-result">QQ账号固定为__BOT_ID__。</small></div><div class="note">默认群用于兼容旧配置。多群参与以“群总览”的参与开关为准；请确认所选群允许机器人参与。该设置不自动申请加群或修改群权限。</div></div></section>
+<section id="tools-tab" class="section"><div class="card"><h2>备份与工具</h2><p class="muted">导出配置包含人设及关键词规则，不包含模型密钥、QQ 登录信息或聊天记录。</p><div class="actions"><button id="export">导出当前配置</button><button id="import">导入配置文件</button><input type="file" id="file" accept="application/json,.json" hidden></div><div class="note">导入后先检查各页，再保存应用。每次保存保留最近 10 份本地备份。</div></div><div class="card"><h3>连接与状态</h3><p id="connection-detail">账号：__BOT_ID__　·　目标群：__DEFAULT_GROUP__</p><p class="muted">模型地址与目标群可在连接设置调整；QQ账号保持固定。其他群的消息不会进入当前上下文。</p><button id="open-snow-tab">打开 QQ / SnowLuma 控制台</button><div class="result" id="status-detail"></div></div><div class="card"><h2>版本与自动检查更新</h2><p id="update-version">版本读取中…</p><p class="muted">托管电脑运行自己的程序副本，不会自动同步你的本地改动。配置同一个发布清单后，两端能检测新版本。此功能只检查和提示，不下载或安装更新，不同步人设、模型密钥或群聊日志。</p><div class="toggle"><label>自动检查新版本<small>面板服务运行时定期检查；没有发布地址时显示待配置。</small></label><input id="update-enabled" type="checkbox" aria-label="自动检查新版本"></div><div class="grid"><label>HTTPS 更新清单地址<input id="update-url" type="text" placeholder="https://你的发布站点/latest.json"></label><label>自动检查间隔 / 小时<input id="update-hours" type="number" min="1" max="168" step="1"></label></div><div class="actions" style="margin-top:16px"><button id="update-save">保存更新设置</button><button id="update-check">立即检查更新</button><button id="update-template">下载更新清单模板</button></div><div id="update-result" class="result">正在读取更新状态…</div><p id="update-notes" style="white-space:pre-wrap"></p><a id="update-download" hidden target="_blank" rel="noreferrer">打开已发布的更新包下载页 ↗</a><p class="note">发布方法：下载模板，把 latest.json 放到两台电脑都可访问的公开 HTTPS 地址。发布新程序包时，修改 version、release_notes、download_url，填写安装包 SHA256（可选），然后把同一清单地址填到两端。地址不含密钥和查询参数，检查不上传聊天或本机配置。当前没有远程发布地址，检查功能配置完成前无法发现异地更新。安装新程序时需保留目标电脑的密钥、设置、学习记忆和登录状态。</p></div></section>
+<section id="errors-tab" class="section"><div class="card"><h2>本群错误日志</h2><p class="muted">按顶部当前群查看模型、记忆提炼、QQ连接、发送和插件错误。只展示错误类别，不展示密钥或群聊原文。旧记录没有保存 HTTP 状态码时，会标明原因未知。每条记录分别说明状态和处理建议；正常取消、临时等待和需要人工核验的情况会单独标记。</p><label>错误分类<select id="error-category"><option value="all">全部错误</option><option value="model">模型回复</option><option value="memory">记忆提炼</option><option value="send">消息发送</option><option value="connection">QQ连接</option><option value="plugin">插件</option><option value="moderation">天网</option><option value="other">其他</option></select></label><div class="actions"><button id="error-refresh">刷新错误日志</button><button id="error-prev">上一页</button><button id="error-next">下一页</button></div><p id="error-count" class="muted"></p><div id="error-list"></div></div><div class="card"><h2>待发送与重发记录</h2><p class="muted">从此版本开始记录已生成的回复。主管理员可手动重发未发送或明确失败的消息；模型尚未生成内容、主动保持安静或过时回复不补发。重发仍受本群开关、冷却、消息额度、插件开关和安全检查限制，不会重新调用模型。</p><p class="note">结果不明确时不会自动重发，也不会绕过停机保护。先核验QQ历史；无法确定时请亲自查看QQ，再明确选择已发送，或勾选“确认未发送并放弃”。核验未找到记录不能证明未发送；放弃操作只清除这条待处理内容，不再重发。过期内容无法重发，旧话题回复也可能已过时，请先阅读内容。待处理内容仅保存在本机（最多200条、压缩后50MB），成功或归档后移除重发载荷，保留最近1000条终态记录。</p><div class="actions"><button id="delivery-refresh">刷新发送记录</button><button id="delivery-prev">上一页</button><button id="delivery-next">下一页</button></div><p id="delivery-count" class="muted"></p><div id="delivery-list"></div></div></section>
+<section id="health-tab" class="section"><div class="card" id="reply-health-card"><h2>回复链路与不回复原因</h2><p class="muted">按当前群汇总运行记录，区分正常保持安静、模型故障和未确认的发送。此页不读取聊天正文。</p><div class="actions reply-health-actions"><label>统计时间范围<select id="reply-health-hours"><option value="1">最近1小时</option><option value="6">最近6小时</option><option value="24" selected>最近24小时</option><option value="72">最近3天</option><option value="168">最近7天</option></select></label><button id="reply-health-refresh">刷新链路统计</button></div><p id="reply-health-window" class="muted">打开本页后读取当前群的记录。</p><p id="reply-health-worker" class="result" role="status">后台状态尚未读取。</p><p id="reply-health-waiting" class="result">等待记录尚未读取。</p><div id="reply-health-flow" class="reply-flow" aria-label="消息回复链路"></div><div id="reply-health-outcomes" class="reply-outcomes" aria-label="保持安静与发送结果"></div><p id="reply-health-coverage" class="note" role="status">历史日志未记录的阶段会显示“未记录”。各阶段可能按消息、生成或分条发送分别计数，不直接相除为回复率。</p><div id="reply-health-assessment" class="reply-health-list"></div><p id="reply-health-probe" class="result">模型实测尚未读取。</p><div id="reply-health-recommendations" class="reply-health-list"></div><div class="actions" style="margin:12px 0 20px"><button id="reply-health-open-model">打开模型设置与测试</button><button id="reply-health-open-errors">查看错误日志与发送记录</button></div><h3>未接话的原因</h3><div style="overflow:auto"><table class="relationship-table reply-health-table"><thead><tr><th>原因与说明</th><th>所属阶段</th><th>次数</th><th>最近记录</th></tr></thead><tbody id="reply-health-reasons"></tbody></table></div><h3 style="margin-top:22px">模型、连接与发送问题</h3><div style="overflow:auto"><table class="relationship-table reply-health-table"><thead><tr><th>问题与建议</th><th>所属功能</th><th>次数</th><th>最近记录</th></tr></thead><tbody id="reply-health-errors"></tbody></table></div><small>统计只读；切换时间范围、刷新或打开测试页不会修改群设置。当前接话进度会自动更新，日志统计可手动刷新。</small></div><div class="card"><h2>本群接话进度</h2><p id="conversation-progress" class="result" role="status">正在读取本群接话进度…</p><p id="model-queue-progress" class="result" role="status">正在读取共用模型队列…</p><p id="learning-progress" class="note" role="status">正在读取本群学习进度…</p><p class="muted">收集消息、模型排队、限流等待和生成会分别显示。新补充、话题变化或过期会取消旧回复；停止和安静后不补发积压回复。</p></div><div class="card"><h2>接话控制</h2><p class="muted">临时安静只暂停陪聊，天网仍按当前配置检测与管理。恢复后不补发安静期间的消息。</p><div class="toggle"><label>允许日常陪聊<small>关闭后暂停普通回复和主动话题；保存后生效。</small></label><input type="checkbox" data-runtime="chat_enabled"></div><div class="toggle"><label>只在被 @ 时接话<small>开启后暂停主动接话和新话题，仍保留 @ 接话概率与冷却。</small></label><input type="checkbox" data-runtime="mention_only"></div><div class="actions" style="margin-top:18px"><button id="quiet-30">安静30分钟</button><button id="quiet-120">安静2小时</button><button id="quiet-resume">结束临时安静</button></div><div id="group-worker-states" class="result">各群状态读取中…</div><div id="reply-reason" class="result">正在读取运行状态…</div><div class="note">创造者可在目标群发送 /鵺安静30（分钟数可修改，最多1440）或 /鵺继续。只有创造者的真实QQ号能使用这些指令；无需公开管理口令。</div></div><div class="card"><h2>连接诊断</h2><p class="muted">QQ离线时后台等待连接恢复；重新接入后验证账号与群号，不补发旧消息。</p><button id="diagnose">检查本地连接</button><div id="diagnosis" class="result">点击检查QQ连接、目标群与后台进程。模型测试在连接设置页面。</div></div><div class="card"><h2>最近运行记录</h2><p class="muted">显示最近40项运行事件，不显示聊天正文或密钥。</p><button id="refresh-events">刷新记录</button><div id="recent-events" class="result">尚未读取</div></div></section><section id="plugins-tab" class="section"><div class="card"><h2>插件功能 · 小小鵺</h2><p class="muted" id="plugin-summary">正在读取插件清单…</p><div class="grid"><label hidden>正在编辑哪个群<select id="plugin-group-select"></select></label><label>添加群配置（群号）<input id="plugin-new-group" type="number" min="10000" max="999999999999"></label></div><div class="actions" style="margin-top:15px"><button id="plugin-add-group">添加群配置</button><button id="plugin-joined-groups">读取已加入群</button></div><p class="note">顶部当前群同时决定聊天、记忆和插件的编辑对象；每个群独立保存开关、文案、每日限额与报时时段。勾选“机器人参与这个群”并保存后，可同时运行多个群。新群默认不参与，启用前核对机器人已加入该群。本群消息与模型额度按本群设置执行；若启用总额度保护，还需满足所有群的总上限。</p><div class="toggle"><label>机器人参与这个群<small>同时接收这个群的消息并按人设、天网与本群插件设置运行，保存后生效。</small></label><input id="plugin-subscribe" type="checkbox" aria-label="机器人参与这个群"></div><div class="toggle"><label>开启插件功能<small>总开关与独立开关都打开后才触发，保存后生效。新增功能默认关闭。</small></label><input type="checkbox" data-plugin="enabled" aria-label="开启插件功能"></div><div class="toggle"><label>附带插件图片<small>签图、塔罗、食物与取图可附图；图片与文字合成一条消息，沿用总消息限额。</small></label><input type="checkbox" data-plugin="images_enabled" aria-label="附带插件图片"></div><div class="grid" id="plugin-fields"></div><div class="note">全部功能只处理当前群，使用本群的回复等待、对话冷却、安静模式与消息上限。只在被@模式下不主动报时。外部取图和B站查询只在开关启用且指令命中时请求；请求范围见功能卡片。面板试用不会联网或发群消息。</div></div><div id="plugin-cards"></div><div class="card"><h3>本地试用</h3><p class="muted">使用页面当前草稿开关；不会修改已保存设置。需先打开总开关与要试用的功能。</p><div class="grid"><label>模拟QQ号<input id="plugin-user" type="text" value="__OWNER_ID__"></label><label>模拟指令<input id="plugin-command" type="text" value=".r3d6"></label></div><button id="plugin-preview" style="margin-top:16px">本地试用插件</button><div id="plugin-preview-result" class="result">只生成预览，不发送消息。</div></div></section><section id="access-tab" class="section"><div class="card"><h2>主管理员与托管人员</h2><p class="muted">主管理员管理全部配置；托管人员只能查看运行状态、启动、停止、重启和修改本人密码。禁用、删除或重置密码会立即退出该账号的全部登录。</p><table class="relationship-table"><thead><tr><th>账号</th><th>身份</th><th>状态</th><th>操作</th></tr></thead><tbody id="access-users"></tbody></table><button id="access-refresh">刷新账号与日志</button></div><div class="card"><h3>创建托管账号</h3><form id="access-create"><div class="grid"><label>账号<input id="access-name" type="text" minlength="3" maxlength="40" pattern="[A-Za-z0-9_.-]{3,40}" required autocomplete="off"></label><label>初始密码<input id="access-password" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label></div><button class="primary">创建托管账号</button></form></div><div class="card"><h3>重置托管账号密码</h3><form id="access-reset"><div class="grid"><label>账号<input id="access-reset-name" type="text" required autocomplete="off"></label><label>新密码<input id="access-reset-password" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label></div><button>重置密码并退出旧登录</button></form></div><div class="card"><h3>修改主管理员本人密码</h3><form id="access-own-password"><div class="grid"><label>原密码<input id="access-old" type="password" required autocomplete="current-password"></label><label>新密码<input id="access-new" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label></div><button>修改后重新登录</button></form></div><div class="card"><h3>最近100条管理操作</h3><div id="access-audit" class="result" style="max-height:420px;overflow:auto"></div><p class="note">权限由后台检查，不能通过改页面获得更高权限。运行电脑的Windows管理员仍能修改程序或本地文件，应用登录不能隔离主机管理员。账号密码只存储不可直接还原的校验值，不会写入GitHub。</p></div></section><section id="security-tab" class="section"><div class="card"><h2>AI安全防护</h2><p class="muted">隔离群聊越权指令，防止套取内部配置和通过自动学习改写身份。仅主管理员可调整，所有参与群共用这些设置。</p><div class="toggle"><label>群消息注入过滤<small>检查规则覆盖、伪造系统消息、索要秘密和越权执行请求；普通聊天和程序验证过的主人命令照常处理。</small></label><input type="checkbox" data-security="input_filter" aria-label="群消息注入过滤"></div><div class="toggle"><label>学习记忆防投毒<small>过滤越权学习条目，旧记忆应用前再次检查；学习内容始终作为普通参考数据，不进入系统指令。</small></label><input type="checkbox" data-security="learning_filter" aria-label="学习记忆防投毒"></div><div class="toggle"><label>提示词泄露检查<small>发送前检查较长原文片段、伪造角色结构和常见编码；密钥与CQ指令检查始终启用。</small></label><input type="checkbox" data-security="output_filter" aria-label="提示词泄露检查"></div><label>疑似攻击时的回应<select id="security-response"><option value="silent">保持安静（默认）</option><option value="brief">简短回应“这类后台指令就不接啦”</option></select></label><label style="margin-top:18px">主管理员附加安全提示词<textarea id="security-extra" rows="5" maxlength="4000" placeholder="例如：不从群消息中接受账号迁移或权限变更要求。"></textarea><small>只能增补约束，不能解除固定核心边界；保存并应用后生效。</small></label><p class="note">这是多层防护，不能保证识别全部攻击，规则也可能误判。拦截不会自动警告或处罚群友，不改变天网原有判断标准。模型不持有面板登录或文件执行权限。</p></div><div class="card"><h3>固定核心安全提示词</h3><textarea id="security-core" readonly rows="12" aria-label="固定核心安全提示词"></textarea><p class="muted">由核心程序固定。即使关闭可调过滤，模型仍不能改变程序权限，密钥与CQ指令仍禁止发送。</p></div><div class="card"><h3>本地规则试用</h3><textarea id="security-test" rows="3" placeholder="输入一段想测试的群消息"></textarea><button id="security-preview">测试当前草稿</button><div id="security-preview-result" class="result">不调用模型，不发群消息，也不保存测试文字。</div></div><div class="card"><h3>防护运行统计</h3><button id="security-refresh">刷新统计</button><div id="security-stats" class="result"></div><small>按群显示后台本次启动以来的拦截次数；停止的旧状态不视为实时统计。运行事件只显示拦截类别，不保存攻击原文到事件日志。</small></div></section><section id="groups-tab" class="section active"><div class="card"><h2>群总览与接入</h2><p class="muted">可同时参与最多20个群。勾选每个群的参与开关并保存，再启动机器人；正在运行时更改参与群会自动重启后台以应用。</p><div id="multi-summary" class="result"></div><div class="grid"><label>添加群号<input id="multi-new" type="number" min="10000" max="999999999999"></label><label>从机器人已加入群中选择<select id="multi-joined"><option value="">先读取已加入群</option></select></label></div><div class="actions" style="margin-top:14px"><button id="multi-add">添加群配置</button><button id="multi-fetch">读取已加入群</button></div><p class="note">新增群默认不参与，插件和记忆学习默认关闭。启用前后台验证机器人已加入该群，不会自动申请加群。各群聊天节奏、上下文、学习日志、插件、临时安静独立；人设、关系、关键词规则、天网规则和模型共用。总额度保护在下方单独设置。</p></div><div class="card"><h3>群列表与运行状态</h3><div style="overflow:auto"><table class="relationship-table"><thead><tr><th>群名 / 群号</th><th>参与对话</th><th>后台状态</th><th>聊天节奏</th><th>上下文与学习</th><th>插件</th><th>配置入口</th></tr></thead><tbody id="multi-rows"></tbody></table></div><small>参与开关表示配置草稿，保存后生效；后台状态每3秒刷新。启用插件或学习请进入该群对应页面设置。</small></div><div class="card"><h2>所有群的总额度保护</h2><p class="muted">各群独立计数与冷却；此处用于限制整个机器人账号的总消息量和模型费用。升级时保留原来的总上限，关闭后只按各群上限运行。</p><div class="toggle"><label for="account-cap">启用总额度保护</label><input id="account-cap" type="checkbox"></div><div class="grid"><label>所有群每小时消息总上限<input id="account-messages" type="number" min="1" max="2400" step="1"></label><label>所有群每小时模型调用总上限<input id="account-models" type="number" min="1" max="7200" step="1"></label></div><div class="result" id="account-usage"></div></div><div class="card"><h3>新群默认节奏</h3><p class="muted">新增群复制当前保存的默认节奏；已有群保持独立。可以将顶部当前群的节奏设为以后新群的默认值，插件和学习仍默认关闭。</p><button id="default-from-group">将当前群节奏设为新群默认值</button></div></section><div class="footer"><small id="save-state">正在加载配置…</small><div class="actions"><button id="reload">重新读取</button><button class="primary" id="save">保存并应用</button></div></div>
+</main></div><div id="toast" role="status"></div>
+<script>
+const csrf='__CSRF__';let config,dirty=false,savedRevision='',lastStatus=null,savedRuntime=null,pluginCatalog=[],pluginGroup='',pluginDraft=null;const $=s=>document.querySelector(s);
+function toast(text){$('#toast').textContent=text;$('#toast').style.display='block';clearTimeout(window.tt);window.tt=setTimeout(()=>$('#toast').style.display='none',5000)}
+async function api(path,body){const r=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'X-Panel-Token':csrf,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const v=await r.json();if(r.status===401){toast('登录已失效，请刷新页面重新登录');throw Error('请重新登录')}if(!r.ok)throw Error(v.error||'操作失败');return v}
+function edited(){dirty=true;$('#save-state').textContent='有未保存的更改'}
+const fields=[['context_messages','上下文记忆条数',1,40,'可设1–40条；只发送当前窗口的文字消息。'],['output_tokens','单次回复 token 上限',32,4096,'可设32–4096 tokens；控制模型输出预算。'],['messages_hour','本群每小时最多消息',1,120,'包括分条消息、表情和管理警告。'],['cooldown_seconds','普通对话冷却 / 秒',0,3600,'两轮普通回复之间的最短等待。'],['delay_min','生成后自然等待下限 / 秒',0,60,'模型生成完成后再等一小会，等待期间仍核对新消息。'],['delay_max','生成后自然等待上限 / 秒',0,90,'实际接话还包括前面的消息收集和模型排队时间。'],['mention_probability','@ 接话机会',0,1,'0–1；仍需通过语境、频率与模型判断。'],['model_calls_hour','本群每小时最多模型调用',1,360,'普通回复与天网检测共享此上限。']];
+const runtimeSchedulingDefaults={collect_quiet:12,collect_incomplete:20,collect_max:45,reply_ttl:90,topic_gap:120,context_age:300,auto_retry:true,retry_attempts:3,retry_base:5};
+const modelControlDefaults={max_concurrent:1,min_interval:2,queue_timeout:25,request_timeout:30};
+const moderationIntakeDefaults={risk_screening:true,audit_every:50,audit_interval:120,batch_limit:12};
+const collectionFields=[['collect_quiet','停顿等待 / 秒',5,60,'默认12秒；最近一条消息后安静多久再接话。'],['collect_incomplete','未完句等待 / 秒',5,90,'默认20秒；句尾像“然后、但是、我还没说完”时多等一会。'],['collect_max','长段收集目标上限 / 秒',15,120,'默认45秒；仍需等到真实停顿。'],['reply_ttl','回复有效期 / 秒',30,180,'默认90秒；从这一轮最新消息算起，过期内容不发送。'],['topic_gap','话题间隔 / 秒',60,900,'默认120秒；超过间隔的发言倾向视作新话题，引用回复会保留话题关联。'],['context_age','上下文有效时长 / 秒',60,1800,'默认300秒；模型只参考当前话题中仍有效的消息。']];
+const retryFields=[['retry_attempts','最多尝试次数',1,5,'默认3次，包含首次尝试；失败后仍需满足回复有效期。'],['retry_base','首次重试等待 / 秒',3,60,'默认5秒；后续临时故障会逐步延长等待。']];
+const modelControlFields=[['max_concurrent','同时进行的模型请求',1,4,'默认1个；所有群的聊天、天网和学习共同使用。'],['min_interval','请求最短间隔 / 秒',1,30,'默认2秒；全局限制启动请求的频率。'],['queue_timeout','排队等待上限 / 秒',5,120,'默认25秒；回复有效期更短时，以有效期为准。'],['request_timeout','单次请求超时 / 秒',5,90,'默认30秒；避免临时故障长时间占用队列。']];
+const extras=[['topic_interval','主动新话题最短间隔 / 秒',300,86400,'默认每小时最多一次。'],['sticker_hour','每小时表情包上限',0,30,'同时受总消息上限限制。'],['sticker_interval','表情包最短间隔 / 秒',0,3600,'避免连续发表情。']];
+const mods=[['warnings_before_mute','升级前警告次数',1,5,'达到次数后，再次违规才禁言。'],['warning_window_seconds','警告计数窗口 / 秒',60,7200,'默认 1800 秒，即 30 分钟。'],['individual_mute_seconds','个人禁言时长 / 秒',60,3600,'默认 600 秒，即 10 分钟。'],['minimum_confidence','最低判定置信度',.9,1,'只处理明确违规，范围 0.9–1。']];
+const moderationIntakeFields=[['audit_every','普通文字抽检间隔 / 条',0,10000,'默认50条；与抽检最短间隔共同控制，设为0关闭普通文字抽检。'],['audit_interval','抽检最短间隔 / 秒',0,3600,'默认120秒；设为0不额外限制抽检时间，仍按文字条数抽检。'],['batch_limit','单批审核文字上限 / 条',1,20,'默认12条；候选优先，再处理普通抽检，实际请求仍需等待共用模型队列。']];
+function makeFields(container,list,type){for(const [key,title,min,max,note] of list){const label=document.createElement('label');label.append(document.createTextNode(title));const input=document.createElement('input');input.type='number';input.min=min;input.max=max;input.step=max===1?.01:1;input.dataset[type]=key;label.append(input);const small=document.createElement('small');small.textContent=note;label.append(small);$(container).append(label)}}
+makeFields('#plugin-fields',[['daily_limit','每人每种插件每日上限',1,100,'成功发出才计数，报时不计个人额度。'],['image_daily_limit','每人每日二次元取图上限',1,20,'失败不扣额度，默认5张。'],['hour_start','报时开始 / 北京时间',0,23,'默认08点起。'],['hour_end','报时结束 / 北京时间',1,24,'默认23点前，不含23点。']],'plugin');makeFields('#runtime-fields',fields,'runtime');makeFields('#extra-fields',extras,'runtime');makeFields('#collection-fields',collectionFields,'runtime');makeFields('#retry-fields',retryFields,'runtime');makeFields('#model-control-fields',modelControlFields,'modelControl');makeFields('#mod-fields',mods,'mod');makeFields('#moderation-intake-fields',moderationIntakeFields,'moderationIntake');
+document.querySelectorAll('input[type=checkbox][data-runtime],input[type=checkbox][data-mod]').forEach(el=>el.setAttribute('aria-label',el.previousElementSibling.firstChild.textContent.trim()));
+function renderRules(){const box=$('#rules');box.replaceChildren();config.keywords.forEach((rule,index)=>{const div=document.createElement('div');div.className='rule';div.innerHTML='<div class="rule-head"><input type="checkbox" aria-label="启用规则"><input type="text" aria-label="规则名称"><button class="danger">删除</button></div><div class="grid"><label>关键词（每行一个）<textarea rows="3"></textarea></label><label>固定回应（换行可拆消息）<textarea rows="3"></textarea></label><label>匹配方式<select><option value="exact">完全匹配</option><option value="contains">包含关键词</option></select></label><label>限定群友 QQ（空白为所有人）<input type="text"></label></div><label style="margin-top:12px"><input type="checkbox"> 必须 @ 机器人</label>';const checks=div.querySelectorAll('input[type=checkbox]'),texts=div.querySelectorAll('input[type=text]'),areas=div.querySelectorAll('textarea'),select=div.querySelector('select');checks[0].checked=rule.enabled;checks[1].checked=rule.require_mention;texts[0].value=rule.name;texts[1].value=rule.user_id;areas[0].value=rule.keywords.join('\n');areas[1].value=rule.response;select.value=rule.mode;div.addEventListener('input',()=>{Object.assign(rule,{enabled:checks[0].checked,require_mention:checks[1].checked,name:texts[0].value,user_id:texts[1].value,keywords:areas[0].value.split('\n').map(s=>s.trim()).filter(Boolean),response:areas[1].value,mode:select.value});edited()});div.querySelector('button').onclick=()=>{config.keywords.splice(index,1);renderRules();edited()};box.append(div)})}
+
+function renderRelationships(){const box=$('#relationships');box.replaceChildren();config.relationships.forEach((row,index)=>{const tr=document.createElement('tr');const enabled=document.createElement('input');enabled.type='checkbox';enabled.checked=row.enabled;enabled.setAttribute('aria-label','启用关系 '+row.name);const td=document.createElement('td');td.append(enabled);tr.append(td);enabled.onchange=()=>{row.enabled=enabled.checked;edited()};for(const [key,label] of [['user_id','QQ号'],['name','名字'],['relationship','关系'],['address','称呼'],['behavior','相处方式']]){const cell=document.createElement('td'),input=document.createElement(key==='behavior'?'textarea':'input');if(key!=='behavior')input.type='text';else input.rows=4;input.value=row[key];input.setAttribute('aria-label',label+' '+row.name);input.oninput=()=>{row[key]=input.value;edited()};cell.append(input);tr.append(cell)}const actions=document.createElement('td'),del=document.createElement('button');del.className='danger';del.textContent='删除';del.onclick=()=>{config.relationships.splice(index,1);renderRelationships();edited()};actions.append(del);tr.append(actions);box.append(tr)})}
+$('#add-relationship').onclick=()=>{config.relationships.push({enabled:true,user_id:'',name:'新群友',relationship:'朋友',address:'',behavior:''});renderRelationships();edited()};
+
+function renderPlugins(){if(!config.plugin_groups)config.plugin_groups={[String(config.connection.group_id)]:config.plugins||{}};if(!pluginGroup)pluginGroup=String(config.connection.group_id);pluginDraft=config.plugin_groups[pluginGroup];if(!pluginDraft)pluginDraft=config.plugin_groups[pluginGroup]={enabled:false,images_enabled:true,daily_limit:20,image_daily_limit:5,hour_start:8,hour_end:23,features:{}};const select=$('#plugin-group-select');select.replaceChildren();for(const gid of groupIds()){select.add(new Option('群 '+gid+(gid===String(config.connection.group_id)?' · 当前连接':''),gid))}select.value=pluginGroup;if(!pluginDraft.texts)pluginDraft.texts={};if(!config.groups)config.groups=[{group_id:config.connection.group_id,enabled:true}];$('#plugin-subscribe').checked=config.groups.some(row=>String(row.group_id)===pluginGroup&&row.enabled);if(!config.plugins)config.plugins={enabled:false,images_enabled:true,daily_limit:20,image_daily_limit:5,hour_start:8,hour_end:23,features:{}};document.querySelectorAll('[data-plugin]').forEach(el=>{const v=pluginDraft[el.dataset.plugin];if(el.type==='checkbox')el.checked=v;else el.value=v});const box=$('#plugin-cards');box.replaceChildren();for(const p of pluginCatalog){const card=document.createElement('div');card.className='card';const heading=document.createElement('h3');heading.textContent=p.name;card.append(heading);for(const text of [p.description,'来源：'+p.sources.join('、'),'用法：'+p.commands,p.network?'外部请求：'+p.network:'']){if(!text)continue;const line=document.createElement('p');line.className='muted';line.textContent=text;card.append(line)}if(p.default_text){const defaults=document.createElement('p');defaults.textContent='默认文案：'+p.default_text;defaults.style.whiteSpace='pre-wrap';card.append(defaults)}if(p.status==='ready'&&p.installed===false){const note=document.createElement('p');note.textContent='已卸载 · 所有群不可触发，素材可恢复';const restore=document.createElement('button');restore.textContent='恢复插件';restore.onclick=()=>managePlugin(p.id,'restore');card.append(note,restore)}else if(p.status==='ready'){const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=!!pluginDraft.features[p.id];check.setAttribute('aria-label','启用'+p.name);check.onchange=()=>{pluginDraft.features[p.id]=check.checked;edited()};label.append(check,document.createTextNode(' 启用此功能'));card.append(label);const textLabel=document.createElement('label');textLabel.style.marginTop='12px';textLabel.append(document.createTextNode('本群回复文案'));const textarea=document.createElement('textarea');textarea.rows=2;textarea.setAttribute('aria-label',p.name+'回复文案');textarea.placeholder='留空使用默认文案，例如：{result}';textarea.value=pluginDraft.texts[p.id]||'';textarea.oninput=()=>{pluginDraft.texts[p.id]=textarea.value;edited()};textLabel.append(textarea);const hint=document.createElement('small');hint.textContent='支持变量：'+p.variables.map(v=>'{'+v+'}').join('、')+'。最多420字，不用换行。';textLabel.append(hint);const example=document.createElement('p');example.textContent='修改示例：'+p.template_example;textLabel.append(example);const how=document.createElement('small');how.textContent='把示例填入上方，可修改普通文字，保留需要的 {变量}；先本地试用，再保存并应用。留空恢复默认文案。';textLabel.append(how);const useExample=document.createElement('button');useExample.type='button';useExample.textContent='填入修改示例';useExample.onclick=()=>{textarea.value=p.template_example;pluginDraft.texts[p.id]=textarea.value;edited()};textLabel.append(useExample);const editor=document.createElement('details'),summary=document.createElement('summary');summary.textContent='修改本群回复文案';editor.append(summary,textLabel);card.append(editor);const remove=document.createElement('button');remove.className='danger';remove.style.marginTop='12px';remove.textContent='卸载插件（所有群）';remove.onclick=()=>managePlugin(p.id,'uninstall');card.append(remove)}else if(p.status==='merged'){const b=document.createElement('button');b.textContent='已整合 · 打开对应页面';b.onclick=()=>$('#nav button[data-tab="'+p.tab+'"]').click();card.append(b)}else{const label=document.createElement('p');label.textContent='待指定转发范围 · 暂不可启用';card.append(label)}box.append(card)}}
+function render(){ ensureGroupConfig();renderLimits();renderModelControl();renderModerationIntake(); $('#api-url').value=config.connection.base_url;$('#api-model').value=config.connection.model;$('#group-id').value=config.connection.group_id;$('#api-thinking').checked=config.connection.disable_thinking;$('#api-key').value='';$('#nav-group').textContent='群 '+config.connection.group_id;$('#connection-detail').textContent='账号：__BOT_ID__ · 目标群：'+config.connection.group_id;$('#persona').value=config.persona;$('#persona-count').textContent=config.persona.length+' 字';document.querySelectorAll('[data-runtime]').forEach(el=>{const v=runtimeDraft()[el.dataset.runtime];if(el.type==='checkbox')el.checked=v;else el.value=v});document.querySelectorAll('[data-mod]').forEach(el=>{const v=config.moderation[el.dataset.mod];if(el.type==='checkbox')el.checked=v;else el.value=v});renderRules();renderRelationships();renderPlugins();renderLearning();renderSecurity();renderMultiGroups();renderWorkspace();showSavedSettings() }
+function collect(){collectRuntimeDraft();collectLimits();collectModelControl();collectModerationIntake();collectSecurity();collectLearningDraft();collectPluginDraft();config.connection={base_url:$('#api-url').value.trim(),model:$('#api-model').value.trim(),group_id:Number($('#group-id').value),disable_thinking:$('#api-thinking').checked};config.persona=$('#persona').value;document.querySelectorAll('[data-mod]').forEach(el=>config.moderation[el.dataset.mod]=el.type==='checkbox'?el.checked:Number(el.value));config.plugins=config.plugin_groups[String(config.connection.group_id)]||{enabled:false,images_enabled:true,daily_limit:20,image_daily_limit:5,hour_start:8,hour_end:23,features:{}};return config}
+async function load(){config=await api('/api/settings');savedRuntime={...config.runtime};savedRuntimeGroups=clone(config.runtime_groups||{});const plugins=await api('/api/plugins');pluginCatalog=plugins.catalog;$('#plugin-summary').textContent='压缩包共'+plugins.directories.length+'个目录；当前安装'+plugins.catalog.filter(p=>p.status==='ready'&&p.installed).length+'项可开关功能。数据：'+plugins.counts.foods+'种食物、'+plugins.counts.music+'首原曲、'+plugins.counts.spells+'条符卡、'+plugins.counts.fortunes+'张签图、'+plugins.counts.tarot+'张塔罗。聊天旧版与关键词已合并，跨群搬运待配置。';render();const info=await api('/api/connection');savedRevision=info.revision;$('#key-state').textContent=info.has_key?'已保存密钥，留空保留；页面不会显示原密钥':'尚未配置密钥';dirty=false;$('#save-state').textContent='已读取配置 · 保存后几秒内自动生效'}
+
+
+document.querySelectorAll('[data-edit]').forEach(button=>button.onclick=()=>{const tab=$('#nav button[data-tab="rhythm-tab"]');tab.click();const field=document.querySelector('[data-runtime="'+button.dataset.edit+'"]');field.scrollIntoView({block:'center',behavior:'smooth'});field.focus();field.select()});
+function validateRuntimeTiming(){
+  const value=key=>Number(document.querySelector('[data-runtime="'+key+'"]').value);
+  const fail=(key,message)=>{$('#nav button[data-tab="rhythm-tab"]').click();document.querySelector('[data-runtime="'+key+'"]').focus();throw Error(message);};
+  if(value('collect_incomplete')<value('collect_quiet'))fail('collect_incomplete','未完句等待不能短于停顿等待');
+  if(value('collect_max')<value('collect_incomplete'))fail('collect_max','长段收集目标上限不能短于未完句等待');
+  if(value('reply_ttl')<=value('collect_max'))fail('reply_ttl','回复有效期必须长于长段收集目标上限');
+  if(value('delay_max')<value('delay_min'))fail('delay_max','自然等待上限不能短于下限');
+}
+function validateNumericFields(){for(const input of document.querySelectorAll('input[type=number][data-runtime],input[type=number][data-model-control],input[type=number][data-moderation-intake],input[type=number][data-mod],input[type=number][data-plugin],#account-messages,#account-models,#memory-tokens,#memory-records,#memory-active')){const number=Number(input.value),min=Number(input.min),max=Number(input.max);if(!input.value||!Number.isFinite(number)||number<min||number>max||(Number(input.step)===1&&!Number.isInteger(number))){const section=input.closest('.section');if(section)$('#nav button[data-tab="'+section.id+'"]').click();input.focus();throw Error(input.parentElement.firstChild.textContent.trim()+'需填写'+min+'–'+max+'之间的'+(Number(input.step)===1?'整数':'数值'))}}validateRuntimeTiming();}
+
+
+$('#nav').onclick=e=>{const b=e.target.closest('[data-tab]');if(!b)return;document.querySelectorAll('.section,nav button').forEach(el=>el.classList.remove('active'));b.classList.add('active');$('#'+b.dataset.tab).classList.add('active')};
+document.querySelectorAll('[data-runtime],[data-model-control],[data-moderation-intake],[data-mod],[data-plugin],#persona,#api-url,#api-model,#api-key,#api-thinking,#group-id').forEach(el=>el.addEventListener('input',()=>{edited();$('#persona-count').textContent=$('#persona').value.length+' 字'}));
+$('#save').onclick=async()=>{const b=$('#save');b.disabled=true;try{validateNumericFields();const v=await api('/api/settings',{...collect(),api_key:$('#api-key').value});config=v.settings;savedRuntime={...config.runtime};savedRuntimeGroups=clone(config.runtime_groups||{});savedRevision=v.revision;render();dirty=false;await status();if(v.restarting)$('#save-state').textContent='已保存 · 正在重启连接';toast(v.restarting?'已保存，正在重启机器人连接':['running','starting','reconnecting','waiting_connection'].includes(lastStatus?.state)&&lastStatus?.fresh?'保存成功，后台自动应用':'设置已保存，机器人启动后生效')}catch(e){toast(e.message)}finally{b.disabled=false}};
+$('#reload').onclick=()=>{if(dirty&&!confirm('放弃未保存的修改并重新读取？'))return;load().catch(e=>toast(e.message))};
+for(const action of ['start','stop'])$('#'+action).onclick=async()=>{try{await api('/api/control',{action});toast(action==='start'?'启动已提交':'已请求停止，当前生成完成后不会继续发送');setTimeout(status,2000)}catch(e){toast(e.message)}};
+$('#add-rule').onclick=()=>{config.keywords.push({enabled:true,name:'新规则',mode:'exact',keywords:['新关键词'],response:'新的回应',user_id:'',require_mention:false});renderRules();edited()};
+$('#preview').onclick=async()=>{try{const v=await api('/api/preview',{settings:collect(),user_id:$('#test-user').value,text:$('#test-text').value,mentioned:$('#test-mention').checked});$('#preview-result').textContent=v.response===null?'没有命中固定回应规则':v.response+'\n\n'+v.note}catch(e){toast(e.message)}};
+function download(name,value,type='application/json'){const a=document.createElement('a'),url=URL.createObjectURL(new Blob([value],{type}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+$('#export').onclick=()=>download('封兽鵺设置.json',JSON.stringify(collect(),null,2));$('#persona-download').onclick=()=>download('封兽鵺人设.txt',$('#persona').value,'text/plain');$('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>150000)throw Error('文件过大');const candidate=JSON.parse(await file.text());if(!candidate.runtime||!candidate.moderation||!Array.isArray(candidate.keywords)||typeof candidate.persona!=='string')throw Error('不是有效配置文件');candidate.relationships=candidate.relationships||config.relationships;candidate.connection=candidate.connection||config.connection;config=candidate;render();edited();toast('已导入草稿，请检查并保存')}catch(e){toast(e.message)}e.target.value=''};
+
+$('#refresh-groups').onclick=async()=>{try{const v=await api('/api/groups');const select=$('#group-select');select.replaceChildren();select.add(new Option('选择一个群…',''));for(const g of v.groups)select.add(new Option(g.group_name+' · '+g.group_id,String(g.group_id)));select.value=$('#group-id').value;$('#group-result').textContent='已读取 '+v.groups.length+' 个群'}catch(e){toast(e.message)}};
+$('#group-select').onchange=e=>{if(e.target.value){$('#group-id').value=e.target.value;edited()}};
+$('#test-model').onclick=async()=>{const button=$('#test-model');button.disabled=true;$('#model-result').textContent='正在测试…';try{const v=await api('/api/test-model',{settings:collect(),api_key:$('#api-key').value});$('#model-result').textContent=v.message}catch(e){$('#model-result').textContent=e.message}finally{button.disabled=false}};
+
+for(const [id,minutes] of [['quiet-30',30],['quiet-120',120],['quiet-resume',0]])$('#'+id).onclick=async()=>{try{await api('/api/quiet',{minutes});await status();toast(minutes?'临时安静已开启，天网继续工作':'已结束临时安静')}catch(e){toast(e.message)}};
+$('#diagnose').onclick=async()=>{const b=$('#diagnose');b.disabled=true;$('#diagnosis').textContent='正在检查…';try{const v=await api('/api/diagnostics');$('#diagnosis').textContent=v.checks.map(c=>(c.ok?'✓ ':'○ ')+c.name+'：'+c.message).join('\n')}catch(e){$('#diagnosis').textContent=e.message}finally{b.disabled=false}};
+$('#refresh-events').onclick=async()=>{try{const v=await api('/api/events');$('#recent-events').textContent=v.events.map(e=>e.time+'　'+e.message).join('\n')||'暂无记录'}catch(e){toast(e.message)}};
+function collectPluginDraft(){if(!pluginDraft)return;document.querySelectorAll('[data-plugin]').forEach(el=>pluginDraft[el.dataset.plugin]=el.type==='checkbox'?el.checked:Number(el.value));config.plugin_groups[pluginGroup]=pluginDraft;const gid=Number(pluginGroup);let subscription=config.groups.find(row=>row.group_id===gid);if(!subscription){subscription={group_id:gid,enabled:false};config.groups.push(subscription)}subscription.enabled=$('#plugin-subscribe').checked}
+async function managePlugin(id,action){if(dirty){toast('请先保存或重新读取当前草稿，再操作插件卸载或恢复');return}if(action==='uninstall'&&!confirm('卸载会让所有群停止使用此插件，素材移入本地回收区，可随时恢复。继续？'))return;try{const result=await api('/api/plugin-manage',{id,action});await load();await status();toast(result.message)}catch(e){toast(e.message)}};
+$('#plugin-subscribe').onchange=()=>{collectPluginDraft();renderMultiGroups();edited()};
+$('#plugin-group-select').onchange=e=>{collectPluginDraft();pluginGroup=e.target.value;renderPlugins()};
+$('#plugin-add-group').onclick=()=>{try{const gid=$('#plugin-new-group').value.trim();if(!/^\d{5,12}$/.test(gid)||Number(gid)>999999999999)throw Error('请填写有效群号');collectPluginDraft();pluginGroup=String(Number(gid));renderPlugins();edited();toast('已添加该群的独立配置草稿，所有新功能默认关闭')}catch(e){toast(e.message)}};
+$('#plugin-joined-groups').onclick=async()=>{try{const result=await api('/api/groups');collectPluginDraft();for(const g of result.groups){const gid=String(g.group_id);if(!config.plugin_groups[gid])config.plugin_groups[gid]={enabled:false,images_enabled:true,daily_limit:20,image_daily_limit:5,hour_start:8,hour_end:23,features:{}}}renderPlugins();edited();toast('已添加已加入群的独立草稿配置，请保存')}catch(e){toast(e.message)}};
+$('#plugin-preview').onclick=async()=>{try{validateNumericFields();const v=await api('/api/plugin-preview',{settings:collect(),group_id:pluginGroup,user_id:$('#plugin-user').value,text:$('#plugin-command').value});$('#plugin-preview-result').textContent=v.text+(v.has_image?'\n附有本地图片':'')+'\n'+v.note}catch(e){toast(e.message)}};
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+let memoryGroup='',memoryOffset=0;
+function collectLearningDraft(){if(!memoryGroup)return;config.learning_groups[memoryGroup]={enabled:$('#memory-enabled').checked,auto_apply:$('#memory-auto').checked,max_tokens:Number($('#memory-tokens').value),max_records:Number($('#memory-records').value),max_active:Number($('#memory-active').value)}}
+function renderLearning(){if(!config.learning_groups)config.learning_groups={};if(!memoryGroup)memoryGroup=String(config.connection.group_id);const gids=new Set(groupIds());const select=$('#memory-group');select.replaceChildren();for(const gid of gids)select.add(new Option('群 '+gid,gid));select.value=memoryGroup;const v=config.learning_groups[memoryGroup]||{enabled:false,auto_apply:true,max_tokens:768,max_records:500,max_active:30};$('#memory-enabled').checked=v.enabled;$('#memory-auto').checked=v.auto_apply;$('#memory-tokens').value=v.max_tokens;$('#memory-records').value=v.max_records;$('#memory-active').value=v.max_active;readMemory().catch(e=>$('#memory-count').textContent='请先保存当前群配置，再刷新日志。')}
+async function readMemory(){const requestedGroup=memoryGroup,requestedOffset=memoryOffset;const v=await api('/api/memory?group_id='+encodeURIComponent(requestedGroup)+'&offset='+requestedOffset);if(memoryGroup!==requestedGroup||memoryOffset!==requestedOffset)return;$('#memory-count').textContent='共 '+v.total+' 条记录 · 当前第 '+(Math.floor(memoryOffset/50)+1)+' 页';$('#memory-prev').disabled=memoryOffset===0;$('#memory-next').disabled=memoryOffset+50>=v.total;const box=$('#memory-log');box.replaceChildren();if(!v.entries.length){box.textContent='暂无学习日志。启用并启动机器人后，发言前后各10条真实消息收齐才会生成。';return}for(const row of v.entries){const card=document.createElement('details');card.className='card';const heading=document.createElement('summary');heading.textContent=row.time+' · '+(row.deleted?'已移除':row.error?'提炼失败':row.active?'已应用':'待应用')+' · '+row.summary.slice(0,60);card.append(heading);const info=document.createElement('p');info.textContent='机器人反应：'+row.anchor+'；采样：前'+row.before_count+'条 / 后'+row.after_count+'条'+(row.error?'；原因：'+learningError(row.error):'');card.append(info);if(row.deleted){const restore=document.createElement('button');restore.textContent='恢复记录（保持停用）';restore.onclick=()=>memoryAction(row,'restore',undefined,requestedGroup);card.append(restore)}else{const inputs={};for(const [key,label] of [['summary','本次互动总结'],['style_notes','表达习惯（每行一条）'],['interests','话题兴趣（每行一条）'],['cautions','改进提醒（每行一条）']]){const l=document.createElement('label');l.textContent=label;const input=document.createElement('textarea');input.rows=3;input.setAttribute('aria-label',label+' '+row.id);input.value=Array.isArray(row[key])?row[key].join('\n'):row[key];l.append(input);card.append(l);inputs[key]=input}const label=document.createElement('label'),active=document.createElement('input');active.type='checkbox';active.checked=row.active;active.setAttribute('aria-label','应用此学习记录 '+row.id);label.append(active,document.createTextNode(' 应用此学习记录'));card.append(label);const save=document.createElement('button');save.textContent='保存此记录';save.onclick=()=>memoryAction(row,'edit',{summary:inputs.summary.value,style_notes:inputs.style_notes.value.split('\n').filter(Boolean),interests:inputs.interests.value.split('\n').filter(Boolean),cautions:inputs.cautions.value.split('\n').filter(Boolean),active:active.checked},requestedGroup);const del=document.createElement('button');del.textContent='移除记录（可恢复）';del.className='danger';del.onclick=()=>memoryAction(row,'delete',undefined,requestedGroup);card.append(save,del)}box.append(card)}}
+async function memoryAction(row,action,value,sourceGroup){try{await api('/api/memory',{group_id:Number(sourceGroup),id:row.id,action,value});await readMemory();toast('学习记录已更新')}catch(e){toast(e.message)}}
+$('#memory-group').onchange=()=>{collectLearningDraft();memoryGroup=$('#memory-group').value;memoryOffset=0;renderLearning()};
+for(const id of ['memory-enabled','memory-auto','memory-tokens','memory-records','memory-active'])$('#'+id).oninput=()=>{collectLearningDraft();edited()};
+$('#memory-refresh').onclick=()=>readMemory().catch(e=>toast(e.message));$('#memory-prev').onclick=()=>{memoryOffset=Math.max(0,memoryOffset-50);readMemory().catch(e=>toast(e.message))};$('#memory-next').onclick=()=>{memoryOffset+=50;readMemory().catch(e=>toast(e.message))};
+
+
+function renderUpdateState(v,fill=false){$('#app-version').textContent='v'+v.current.version;$('#update-version').textContent='小小鵺 v'+v.current.version+' · 发布日期 '+v.current.release_date;if(fill){$('#update-enabled').checked=v.config.enabled;$('#update-url').value=v.config.manifest_url;$('#update-hours').value=v.config.interval_hours}const names={waiting:'待配置更新地址',pending:'等待首次检查',disabled:'自动检查已关闭',available:'发现新版本',up_to_date:'当前没有更高版本',error:'更新检查失败'};$('#update-result').textContent=(names[v.status]||'状态未知')+'\n当前版本：'+v.current.version+(v.latest_version?'\n发布版本：'+v.latest_version:'')+'\n自动检查：'+(v.config.enabled?'开启，每 '+v.config.interval_hours+' 小时':'关闭')+(v.checked_at?'\n最近检查（北京时间）：'+v.checked_at:'')+(v.error?'\n'+v.error:'')+(v.sha256?'\n发布方提供的 SHA256（尚未校验安装包）：'+v.sha256:'');$('#update-notes').textContent=v.release_notes||'';$('#update-download').hidden=!(v.status==='available'&&v.download_url);if(v.download_url)$('#update-download').href=v.download_url}
+async function refreshUpdateState(fill=false){renderUpdateState(await api('/api/updates'),fill)}
+$('#update-save').onclick=async()=>{try{const v=await api('/api/updates',{action:'save',config:{enabled:$('#update-enabled').checked,manifest_url:$('#update-url').value.trim(),interval_hours:Number($('#update-hours').value)}});renderUpdateState(v,true);toast('更新检查设置已保存')}catch(e){toast(e.message)}};
+$('#update-check').onclick=async()=>{const b=$('#update-check');b.disabled=true;try{renderUpdateState(await api('/api/updates',{action:'check'}));toast('检查完成；不会安装程序')}catch(e){toast(e.message)}finally{b.disabled=false}};
+$('#update-template').onclick=()=>{const v={app_id:'nuebot',version:$('#app-version').textContent.replace(/^v/,''),release_notes:'在这里填写这个版本的更新内容',download_url:'',sha256:''};const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(v,null,2)],{type:'application/json'}));a.href=url;a.download='latest.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+refreshUpdateState(true).catch(e=>$('#update-result').textContent=e.message);setInterval(()=>refreshUpdateState().catch(()=>{}),30000);
+
+
+
+const accessEvents={admin_created:'创建主管理员',login:'登录',login_failed:'登录失败',logout:'退出登录',password_changed:'修改本人密码',account_create:'创建托管账号',account_enabled:'调整账号启用状态',account_delete:'删除托管账号',account_password:'重置托管密码',permission_denied:'拒绝越权请求','/api/control':'机器人运行操作','/api/settings':'保存配置','/api/memory':'编辑学习日志','/api/plugin-manage':'插件管理','/api/updates':'更新检查操作'};
+async function readAccess(){const a=await api('/api/auth/users');const box=$('#access-users');box.replaceChildren();for(const row of a.users){const tr=document.createElement('tr');for(const v of [row.username,row.owner?'主管理员':'托管人员',row.enabled?'已启用':'已禁用']){const td=document.createElement('td');td.textContent=v;tr.append(td)}const td=document.createElement('td');if(row.owner)td.textContent='核心账号，不可删除或禁用';else{for(const action of ['enabled','delete']){const b=document.createElement('button');b.textContent=action==='delete'?'删除':row.enabled?'禁用':'启用';b.onclick=async()=>{if(!confirm(b.textContent+'账号 '+row.username+'？现有登录将立即失效。'))return;try{await api('/api/auth/users',{action,username:row.username,enabled:!row.enabled});await readAccess();toast('账号已更新')}catch(e){toast(e.message)}};td.append(b)}const reset=document.createElement('button');reset.textContent='重置密码';reset.onclick=()=>{$('#access-reset-name').value=row.username;$('#access-reset-password').focus()};td.append(reset)}tr.append(td);box.append(tr)}const logs=await api('/api/auth/audit');$('#access-audit').textContent=logs.entries.map(r=>new Date(r.time).toLocaleString('zh-CN')+' · '+r.actor+' · '+(accessEvents[r.event]||r.event)+(r.target?' · '+r.target:'')+(r.success?'':' · 未成功')).join('\n')||'暂无记录'}
+let panelSessionRole=null;
+api('/api/auth/session').then(s=>{panelSessionRole=s.role==='admin'?'admin':null;$('#auth-who').textContent=s.username+' · '+(s.role==='admin'?'主管理员':'托管人员');document.querySelectorAll('[data-admin-only]').forEach(el=>el.hidden=s.role!=='admin');applySnowDeepLink();}).catch(e=>toast(e.message));readAccess().catch(e=>toast(e.message));
+$('#access-refresh').onclick=()=>readAccess().catch(e=>toast(e.message));
+$('#access-create').onsubmit=async e=>{e.preventDefault();try{await api('/api/auth/users',{action:'create',username:$('#access-name').value,password:$('#access-password').value});$('#access-create').reset();await readAccess();toast('托管账号已创建')}catch(e){toast(e.message)}};
+$('#access-reset').onsubmit=async e=>{e.preventDefault();try{await api('/api/auth/users',{action:'password',username:$('#access-reset-name').value,password:$('#access-reset-password').value});$('#access-reset').reset();await readAccess();toast('密码已重置，旧登录已退出')}catch(e){toast(e.message)}};
+$('#access-own-password').onsubmit=async e=>{e.preventDefault();if(dirty&&!confirm('有未保存配置，修改密码将退出登录。继续？'))return;try{await api('/api/auth/password',{old_password:$('#access-old').value,password:$('#access-new').value});dirty=false;location.reload()}catch(e){toast(e.message)}};
+$('#auth-logout').onclick=async()=>{if(dirty&&!confirm('有未保存配置，确认退出登录？'))return;try{await api('/api/auth/logout',{});dirty=false;location.reload()}catch(e){toast(e.message)}};
+
+function renderSecurity(){config.security={input_filter:true,learning_filter:true,output_filter:true,blocked_response:'silent',extra_prompt:'',...config.security};document.querySelectorAll('[data-security]').forEach(el=>el.checked=config.security[el.dataset.security]);$('#security-response').value=config.security.blocked_response;$('#security-extra').value=config.security.extra_prompt;readSecurity().catch(e=>$('#security-stats').textContent=e.message)}
+function collectSecurity(){config.security={input_filter:document.querySelector('[data-security="input_filter"]').checked,learning_filter:document.querySelector('[data-security="learning_filter"]').checked,output_filter:document.querySelector('[data-security="output_filter"]').checked,blocked_response:$('#security-response').value,extra_prompt:$('#security-extra').value};return config.security}
+async function readSecurity(){const v=await api('/api/security');$('#security-core').value=v.core_prompt;const rows=v.groups.length?v.groups:[{group:config.connection.group_id,security_counts:v.status,fresh:!!lastStatus?.fresh}];$('#security-stats').textContent=rows.map(r=>'群 '+r.group+' · '+(r.fresh?'运行中':'未运行 / 旧状态')+' · 输入 '+(r.security_counts?.input||0)+' · 输出 '+(r.security_counts?.output||0)+' · 学习 '+(r.security_counts?.learning||0)).join('\n')}
+document.querySelectorAll('[data-security],#security-response,#security-extra').forEach(el=>el.addEventListener('input',edited));
+$('#security-refresh').onclick=()=>readSecurity().catch(e=>toast(e.message));
+$('#security-preview').onclick=async()=>{try{const v=await api('/api/security-preview',{text:$('#security-test').value,security:collectSecurity()});$('#security-preview-result').textContent=(v.blocked?'命中疑似越权指令':'未命中当前模式规则')+(v.reason?' · '+v.reason:'')+'\n'+(v.blocked?(v.reply.length?v.reply.join('，'):'保持安静'):'未命中不代表绝对安全')+'\n'+v.note}catch(e){toast(e.message)}};
+
+let multiGroupNames={};
+function multiProfile(gid){return config.plugin_groups?.[gid]||{enabled:false,features:{}}}
+function setMultiGroup(gid,enabled){let row=config.groups.find(g=>String(g.group_id)===gid);if(!row){if(config.groups.length>=20)throw Error('最多配置20个参与群，请先停用并清理其他配置');row={group_id:Number(gid),enabled:false};config.groups.push(row)}row.enabled=enabled;if(pluginGroup===gid)$('#plugin-subscribe').checked=enabled;edited();renderMultiGroups()}
+
+
+$('#multi-add').onclick=()=>{try{addMultiGroup($('#multi-new').value.trim())}catch(e){toast(e.message)}};
+$('#multi-fetch').onclick=async()=>{try{const v=await api('/api/groups');const select=$('#multi-joined');select.replaceChildren();select.add(new Option('选择群并添加配置…',''));for(const g of v.groups){multiGroupNames[String(g.group_id)]=g.group_name;select.add(new Option(g.group_name+' · '+g.group_id,String(g.group_id)))}renderMultiGroups();toast('已读取 '+v.groups.length+' 个群；不会自动开启任何群')}catch(e){toast(e.message)}};
+$('#multi-joined').onchange=()=>{if(!$('#multi-joined').value)return;try{addMultiGroup($('#multi-joined').value)}catch(e){toast(e.message)}};
+let editingGroup='',savedRuntimeGroups={},statusBusy=false;
+const clone=value=>JSON.parse(JSON.stringify(value));
+const groupTabs=new Set(['rhythm-tab','plugins-tab','health-tab','errors-tab']);
+function groupIds(){return [...new Set([String(config.connection.group_id),...(config.groups||[]).map(g=>String(g.group_id)),...Object.keys(config.plugin_groups||{}),...Object.keys(config.learning_groups||{}),...Object.keys(config.runtime_groups||{})])];}
+function ensureGroupConfig(){
+  config.runtime={...runtimeSchedulingDefaults,...config.runtime};config.model_control={...modelControlDefaults,...config.model_control};config.moderation_intake={...moderationIntakeDefaults,...config.moderation_intake};
+  config.groups??=[{group_id:config.connection.group_id,enabled:true}];config.plugin_groups??={[String(config.connection.group_id)]:config.plugins||{}};config.learning_groups??={};config.runtime_groups??={};
+  config.account_limits??={enabled:true,messages_hour:config.runtime.messages_hour,model_calls_hour:config.runtime.model_calls_hour};
+  for(const gid of groupIds())config.runtime_groups[gid]={...config.runtime,...config.runtime_groups[gid]};
+  if(!editingGroup||!groupIds().includes(editingGroup))editingGroup=String(config.connection.group_id);
+  pluginGroup=memoryGroup=editingGroup;
+}
+function runtimeDraft(){return config.runtime_groups[editingGroup];}
+function collectRuntimeDraft(){if(!config||!editingGroup)return;document.querySelectorAll('[data-runtime]').forEach(el=>runtimeDraft()[el.dataset.runtime]=el.type==='checkbox'?el.checked:Number(el.value));}
+function renderRuntimeDraft(){for(const el of document.querySelectorAll('[data-runtime]')){const v=runtimeDraft()[el.dataset.runtime];if(el.type==='checkbox')el.checked=v;else el.value=v;}}
+function collectLimits(){config.account_limits={enabled:$('#account-cap').checked,messages_hour:Number($('#account-messages').value),model_calls_hour:Number($('#account-models').value)};}
+function renderModelControl(){for(const el of document.querySelectorAll('[data-model-control]'))el.value=config.model_control[el.dataset.modelControl];}
+function collectModelControl(){for(const el of document.querySelectorAll('[data-model-control]'))config.model_control[el.dataset.modelControl]=Number(el.value);}
+document.querySelectorAll('[data-model-control]').forEach(el=>el.addEventListener('input',collectModelControl));
+function renderModerationIntake(){for(const el of document.querySelectorAll('[data-moderation-intake]')){const value=config.moderation_intake[el.dataset.moderationIntake];if(el.type==='checkbox')el.checked=value;else el.value=value;}}
+function collectModerationIntake(){for(const el of document.querySelectorAll('[data-moderation-intake]'))config.moderation_intake[el.dataset.moderationIntake]=el.type==='checkbox'?el.checked:Number(el.value);}
+document.querySelectorAll('[data-moderation-intake]').forEach(el=>el.addEventListener('input',collectModerationIntake));
+function renderLimits(){const v=config.account_limits;$('#account-cap').checked=v.enabled;$('#account-messages').value=v.messages_hour;$('#account-models').value=v.model_calls_hour;}
+function renderWorkspace(){
+  const select=$('#workspace-group');select.replaceChildren();
+  for(const gid of groupIds())select.add(new Option((multiGroupNames[gid]||'群')+' · '+gid,gid));select.value=editingGroup;
+  $('#workspace-title').textContent='正在编辑 · '+(multiGroupNames[editingGroup]||'群 '+editingGroup);
+  if(typeof errorOffset!=='undefined'){errorOffset=0;deliveryOffset=0;$('#error-list').replaceChildren();$('#delivery-list').replaceChildren();if(document.querySelector('#errors-tab.active')){readErrors().catch(e=>toast(e.message));readDeliveries().catch(e=>toast(e.message));}}
+  $('#nav-group').textContent='当前群 '+editingGroup;updateScopeNote();showSavedSettings();
+  if(typeof replyHealthRequest!=='undefined'){resetReplyHealth();if(document.querySelector('#health-tab.active'))readReplyHealth();}
+}
+function updateScopeNote(){
+  const tab=$('#nav button.active')?.dataset.tab;
+  $('#scope-note').textContent=tab==='snowluma-tab'?'QQ 接入管理 · 访问当前运行电脑的 SnowLuma；不修改本群草稿':groupTabs.has(tab)?'本页只影响当前群 · 切换群会保留未保存草稿':tab==='groups-tab'?'群总览 · 每个群独立设置；总额度保护由所有群共用':'全局设置 · 影响所有参与群';
+  $('#scope-note').classList.toggle('global-scope',!groupTabs.has(tab));
+}
+function selectWorkspace(gid,tab){
+  if(!groupIds().includes(gid))return;
+  try{validateNumericFields();collectRuntimeDraft();collectPluginDraft();collectLearningDraft();}catch(e){$('#workspace-group').value=editingGroup;toast(e.message);return;}
+  editingGroup=pluginGroup=memoryGroup=gid;memoryOffset=0;
+  renderRuntimeDraft();renderPlugins();renderLearning();renderWorkspace();renderMultiGroups();renderStatus();
+  $('#plugin-preview-result').textContent='当前群草稿已切换，可重新试用。';$('#recent-events').textContent='点击刷新当前群运行记录。';$('#diagnosis').textContent='点击检查当前群连接。';
+  if(tab)$('#nav button[data-tab="'+tab+'"]').click();
+}
+$('#workspace-group').onchange=e=>selectWorkspace(e.target.value);
+$('#plugin-group-select').onchange=e=>selectWorkspace(e.target.value,'plugins-tab');
+$('#memory-group').onchange=e=>selectWorkspace(e.target.value,'rhythm-tab');
+for(const id of ['account-cap','account-messages','account-models'])$('#'+id).oninput=()=>{collectLimits();edited();renderMultiGroups();};
+$('#default-from-group').onclick=()=>{try{validateNumericFields();collectRuntimeDraft();config.runtime=clone(runtimeDraft());edited();toast('已更新新群默认节奏草稿；已有群设置不会改变。');}catch(e){toast(e.message);}};
+document.querySelectorAll('[data-runtime]').forEach(el=>el.addEventListener('input',()=>{collectRuntimeDraft();renderMultiGroups();}));
+$('#nav').addEventListener('click',()=>updateScopeNote());
+function selectedState(){
+  const found=(lastStatus?.groups||[]).find(r=>String(r.group)===editingGroup);
+  return {...(found||{group:Number(editingGroup),state:'stopped',fresh:false}),stop_requested:lastStatus?.stop_requested,connection_restart:lastStatus?.connection_restart};
+}
+function showSavedSettings(){
+  if(!config||!editingGroup)return;const r=savedRuntimeGroups[editingGroup]||config.runtime_groups[editingGroup];
+  $('#s-memory').textContent=r.context_messages+' 条';$('#s-token').textContent=r.output_tokens;
+}
+function diagnosticInfo(code,category='',event=''){
+  const item=(label,advice,tone='error')=>({label,advice,tone});
+  if(event==='send_unknown'||event==='moderation_unknown')return item(event==='moderation_unknown'?'群管理结果尚未确认':'发送结果尚未确认','请先在 QQ 核验实际结果；确认前保持暂停，不要重复发送或执行管理操作。','manual');
+  const definitions={
+    HTTP400:item('模型服务拒绝请求参数（400）','在“模型与连接”核对模型名称和协议开关；检查该服务是否支持当前请求格式。'),
+    HTTP401:item('模型密钥验证未通过（401）','在“模型与连接”核对服务地址并更新对应密钥；此页不显示密钥。'),
+    HTTP402:item('模型服务要求支付或充值（402）','检查模型服务账号状态和可用额度；本页无法读取真实余额。'),
+    HTTP403:item('模型服务拒绝访问（403）','检查模型账号权限、模型访问范围和服务状态。'),
+    HTTP404:item('模型或 API 接口未找到（404）','核对 API 基础地址和模型名称，再测试模型连接。'),
+    HTTP408:item('模型服务等待超时（408）','等待服务恢复；可重试的回复仍须在有效期内。','waiting'),
+    HTTP422:item('模型请求参数未通过服务校验（422）','核对模型名称、API 协议与参数支持；模型列表可读取不代表生成请求可用。'),
+    HTTP413:item('模型请求超过服务大小限制（413）','减少本群上下文条数或有效时长，并检查模型服务限制。'),
+    HTTP429:item('模型服务限流或配额受限（429）','等待共用队列恢复；频繁出现时检查调用频率与服务配额。429 本身不能证明余额不足。','waiting'),
+    HTTPError:item('历史模型请求失败，未记录具体状态码','此记录无法还原当时的状态码；检查模型连接并参考后续新记录。'),
+    HourlyBudget:item('本群或所有群模型调用额度已用完','等待小时额度恢复；需要调整时核对本群限额和群总览中的总额度。','waiting'),
+    ModelQueueBusy:item('共用模型队列拥挤','等待排队恢复；学习与聊天共用模型服务，过期回复会放弃。','waiting'),
+    ModelQueueFull:item('共用模型队列已满','等待正在处理的请求完成；持续出现时减少总调用量。','waiting'),
+    ModelQueueTimeout:item('模型排队超过等待上限','这一轮可能来不及回复；先查看共用模型队列和服务限流状态。','waiting'),
+    ModelRequestTimeout:item('模型请求超过超时上限','检查模型连接和服务状态；只有仍有效的回复才可能再次尝试。','waiting'),
+    ModelResponseTooLarge:item('模型响应过大，读取已中止','检查模型服务输出格式与回复上限，避免返回过大的内容。'),
+    NetworkError:item('模型连接超时或网络中断','检查运行电脑的网络和模型服务连接；临时故障按有效期与重试设置处理。','waiting'),
+    InvalidJSON:item('模型没有返回完整有效的 JSON','核对模型协议与格式支持；输出太短时检查对应的输出 token 上限。'),
+    OutputTruncated:item('记忆提炼输出达到 token 上限','在本群记忆学习设置检查提炼输出上限；失败结果不会用于记忆。'),
+    InvalidLearningOutput:item('学习结果未通过格式或安全检查','这份结果不会应用到人设；检查后续学习记录，保持安全过滤。'),
+    StorageError:item('学习日志保存失败','检查运行电脑的可用磁盘和程序目录写入权限。'),
+    ReplyExpired:item('回复已过期，旧内容已放弃','等待新一轮消息；过时回复不会补发。','normal'),
+    ReplySuperseded:item('收到补充或话题变化，旧回复已放弃','机器人会依据新的消息重新判断；不要手动重发旧内容。','normal'),
+    ManuallyConfirmedNotSent:item('管理员已确认未发送并放弃','此条内容已归档，后续不会发送。','normal'),
+    RetryableBeforeSend:item('发送前遇到临时故障，明确尚未发送','在回复有效期内按本群重试设置处理；过期后放弃旧内容。','waiting'),
+    MessageLimit:item('本群或所有群消息额度已用完','等待小时额度恢复；本群限额与所有群总额度都必须允许发送。','waiting'),
+    Stopped:item('机器人已停止','按需要重新启动；停机期间积压的旧回复不会补发。','normal'),
+    Disconnected:item('QQ 连接尚未就绪','在 QQ / SnowLuma 页检查接入和登录状态；连接恢复后重新判断新消息。','waiting'),
+    QuietMode:item('本群处于安静模式或陪聊已关闭','检查本群接话开关与临时安静状态；恢复后不会补发旧消息。','normal'),
+    EarlierMessageUnsent:item('同一回复的前一条尚未发送','先检查该轮前一条发送记录，避免后续分条脱离上下文。','waiting'),
+    PluginDisabled:item('对应插件已关闭或卸载','按需要检查本群插件开关；这条旧插件回复不会绕过开关发送。','normal'),
+    StickerDisabled:item('本群表情包已关闭','按需要检查本群表情设置，旧内容仍受有效期限制。','normal'),
+    StickerLimit:item('本群表情发送频率达到限制','等待表情频率恢复；无需连续重试。','waiting'),
+    OneBotRejected:item('QQ 接口明确返回发送失败','检查 QQ 接入状态和该群发送权限；仍有效的内容按重试设置处理。'),
+    SecurityBlocked:item('内容未通过发送前安全检查','保持安全过滤；这条内容不会发送，等待新的正常对话。','normal'),
+    UnknownOutcome:item('发送结果尚未确认','请先在 QQ 人工核对；不能自动重发，也不能据此认定未发送。','manual'),
+    EmptyReply:item('模型生成没有返回可用文字','检查模型协议和最新短文本测试结果；不会发送空内容。'),
+    ModelMissingChoices:item('模型响应缺少生成结果','核对模型服务是否兼容 chat/completions；这次响应没有可用回复内容。'),
+    ModelInvalidJSON:item('模型回复不是完整有效的 JSON','检查模型格式支持与输出上限；这次结果不会发送。'),
+    ModelInvalidSchema:item('模型回复字段不符合预期','核对模型协议和输出格式；未通过校验的内容不会发送。'),
+    ModelOutputTruncated:item('模型回复达到输出上限，结果被截断','按需要调整本群输出 token 上限，并核对最新模型测试；不发送残缺结果。'),
+    ModelSilent:item('模型判断这轮保持安静','这轮没有选择公开回复；等待新的正常对话。','normal'),
+    RedirectRejected:item('模型接口返回了不允许的跳转','核对直接可用的 API 基础地址；程序不会带着密钥跟随接口跳转。'),
+    ProbeRateLimited:item('模型手动测试间隔不足30秒','稍后再试，避免连续测试占用共用模型队列。','waiting'),
+    OperationalError:item('本地数据库操作未完成','检查运行电脑的可用空间、文件占用与程序目录权限，保留现有配置和数据。'),
+    DatabaseError:item('本地数据库读取或写入失败','保留现有数据，检查磁盘与文件权限后再处理。'),
+    TypeError:item('后台结果类型未通过校验','检查程序版本与相关功能设置，并参考后续分类记录。'),
+    KeyError:item('后台结果缺少预期字段','核对模型协议或程序版本；此页不显示异常原文。'),
+    InterruptedSend:item('上次发送中断，结果需要核验','先查看 QQ 和发送记录，确认结果后再处理；不能自动重发。','manual'),
+    InterruptedBeforeSend:item('准备阶段中断，内容尚未发送','检查后台连接；仍有效的内容按重试设置处理。','waiting'),
+    DeliveryQueueFull:item('待处理消息数量或大小达到上限','先核验结果不明的记录，归档无须发送的旧内容；不要批量重复重发。'),
+    DeliveryTooLarge:item('待发送内容超过大小限制','检查插件图片或回复载荷大小；此内容不能直接入队。'),
+    ValueError:item('后台结果或参数未通过校验','查看该错误所属功能的设置和后续记录；旧日志无法确定具体校验项。'),
+    PermissionError:item('程序目录或资源访问权限不足','检查运行电脑的程序目录和文件权限。'),
+    FileNotFoundError:item('程序所需文件或素材缺失','检查完整程序文件与对应插件素材是否存在。'),
+    OSError:item('本机读写或连接操作未完成','检查运行电脑的磁盘、文件权限和连接诊断。')
+  };
+  const aliases={QueueExpired:'ModelQueueTimeout',Hourly_model_budget_exhausted:'HourlyBudget','Hourly model budget exhausted':'HourlyBudget',JSONDecodeError:'InvalidJSON',LearningOutputTruncated:'OutputTruncated',Unsafe_learning_output:'InvalidLearningOutput',Cancelled:'ReplySuperseded'};
+  if(typeof code!=='string')return item('后台未记录具体原因','先刷新连接诊断和最近运行记录，再参考后续记录。');
+  code=Object.hasOwn(aliases,code)?aliases[code]:code;
+  if(['TimeoutError','URLError','ConnectionError','ConnectionResetError','ConnectionRefusedError','ConnectionAbortedError','ConnectionClosedOK','ConnectionClosedError','InvalidStatus','InvalidHandshake','InvalidMessage','EOFError'].includes(code)){
+    if(category==='connection')return item('QQ 消息连接中断或等待超时','在 QQ / SnowLuma 页检查登录与事件连接；后台会等待连接恢复。','waiting');
+    if(category==='send')return item('QQ 发送请求未完成','查看对应发送记录；结果不明确时先在 QQ 人工核验。','manual');
+    return definitions.NetworkError;
+  }
+  if(/^HTTP5\d\d$/.test(code))return item('模型服务暂时故障（'+code.slice(4)+'）','等待模型服务恢复；仍有效的回复才可能重试，旧内容过期后放弃。','waiting');
+  return (Object.hasOwn(definitions,code)?definitions[code]:null)||item('后台未记录具体原因','先刷新连接诊断和最近运行记录；此处不显示未经确认的异常原文。');
+}
+
+function diagnosticEntryInfo(row){
+  const issue=diagnosticInfo(row.missing_http_status===true?'HTTPError':row.code,row.category,row.event),reason=healthReason(row.reason_key),knownReason=reason.label!=='原因尚未分类';
+  if(row.reason_key==='ModelFailure'||row.reason_key==='PluginFailure')return {...reason,tone:'error',badge:'本轮处理失败'};
+  if(row.outcome==='waiting')return {...(knownReason?reason:issue.label!=='后台未记录具体原因'?issue:{label:'本轮正在等待再次处理',advice:'等待队列、额度或临时故障恢复；回复过期后停止重试。'}),tone:'waiting',badge:'正在等待'};
+  if(row.outcome==='expired')return {...(knownReason?reason:diagnosticInfo(row.code==='ReplySuperseded'?'ReplySuperseded':'ReplyExpired')),tone:'normal',badge:'旧回复已放弃'};
+  if(row.outcome==='silent')return {...(knownReason?reason:diagnosticInfo('ModelSilent')),tone:'normal',badge:'本轮保持安静'};
+  return {...issue,badge:row.outcome==='failure'&&issue.tone!=='manual'&&issue.tone!=='normal'?'请求未完成':({normal:'已按规则处理',waiting:'等待恢复',manual:'需要人工核验',error:'需要检查'})[issue.tone]};
+}
+
+function diagnosticEntryDetails(row){
+  const purposes={mention:'被 @ 接话',chat:'普通接话',topic:'主动话题',learning:'记忆学习',moderation:'天网审核'},details=[];
+  if(typeof row.purpose==='string'&&Object.hasOwn(purposes,row.purpose))details.push('请求用途：'+purposes[row.purpose]);
+  if(Number.isInteger(row.attempt)&&row.attempt>=0&&row.attempt<=5)details.push(row.attempt?'实际请求 '+row.attempt+' 次':'尚未发起实际请求');
+  if(Number.isInteger(row.queue_waits)&&row.queue_waits>=0&&row.queue_waits<=32)details.push('排队重排 '+row.queue_waits+' 次（单独计数）');
+  if(typeof row.duration_ms==='number'&&Number.isFinite(row.duration_ms)&&row.duration_ms>=0&&row.duration_ms<=300000)details.push('请求耗时 '+(row.duration_ms/1000).toFixed(1)+' 秒');
+  return details.join(' · ');
+}
+
+let replyHealthRequest=0;
+function healthCount(value){return typeof value==='number'&&Number.isSafeInteger(value)&&value>=0?String(value):'未记录';}
+function healthTime(value){
+  let date;if(typeof value==='number'&&Number.isFinite(value)&&value>0)date=new Date(value*1000);
+  else if(typeof value==='string'&&/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(value))date=new Date(value.replace(' ','T').replace(',','.'));
+  return date&&Number.isFinite(date.getTime())?date.toLocaleString():'时间未记录';
+}
+function healthReason(key){
+  const normal=(label,advice)=>({label,advice,tone:'normal'});
+  const reasons={
+    cooldown:normal('仍在接话冷却','等待本群冷却结束；连续消息仍可能合并判断。'),
+    quiet:normal('本群临时安静','检查接话控制里的安静时长。'),quiet_mode:normal('本群处于安静模式','恢复后只处理新消息，不补发旧内容。'),
+    chat_disabled:normal('本群陪聊已关闭','按需要打开日常陪聊开关并保存。'),
+    mention_only:normal('只在被 @ 时接话','当前普通消息保持安静；按需要检查本群设置。'),
+    not_mentioned:normal('本群仅接 @，此消息未 @','这是本群接话规则的正常结果。'),
+    mention_probability:normal('@ 接话概率未命中','按需要检查本群 @ 接话概率；每次 @ 不保证接话。'),
+    no_trigger:normal('语境未触发接话','聊天模型会按语境判断，并非每条消息都会回复。'),
+    not_triggered:normal('当前消息未触发接话','检查语境、接话模式与概率；这是判断结果。'),
+    no_reply:normal('模型判断这轮保持安静','模型没有选择公开回复；等待新的对话。'),
+    model_silent:normal('模型判断这轮保持安静','模型没有选择公开回复；等待新的对话。'),
+    challenge_filtered:normal('完整刁难式考题被跳过','按本群“跳过刁难式算法题”开关处理。'),
+    security_blocked:normal('未通过安全过滤','保持安全过滤，等待正常新消息。'),
+    empty_message:normal('消息没有可用文字','图片不会传给模型，只有可用文字进入接话判断。'),
+    own_message:normal('机器人自己的消息','不会把自身发言当作新的接话触发。'),
+    unsupported_message:normal('消息类型不参与接话','只处理程序支持的本群消息。'),
+    reply_expired:diagnosticInfo('ReplyExpired'),reply_superseded:diagnosticInfo('ReplySuperseded'),
+    stopped:diagnosticInfo('Stopped'),disconnected:diagnosticInfo('Disconnected'),
+    message_limit:diagnosticInfo('MessageLimit'),hourly_budget:diagnosticInfo('HourlyBudget'),
+    model_queue_timeout:diagnosticInfo('ModelQueueTimeout'),model_queue_full:diagnosticInfo('ModelQueueFull'),
+    collection_capacity:{label:'待判断消息数量达到收集上限',advice:'较旧的待判断消息已放弃；等待当前轮完成，不手动补发旧话题。',tone:'waiting'},owner_control:normal('创造者已处理接话控制指令','这条停止、安静或恢复指令只调整运行状态，不作为普通闲聊回复。'),received:normal('收到本群消息','此记录表示接收成功，后续仍需按接话规则判断。'),queued:normal('本群消息已进入收集队列','先等待连续发言结束，再判断是否接话。'),ready:normal('已具备接话条件','进入回复判断，仍受有效期和发送检查保护。'),generated:normal('已生成回复内容','发送前还会核对有效期、本群开关和安全检查。'),sent:normal('QQ 已确认发送','已有发送成功确认，不再重复发送。'),
+    catchphrase_filtered:normal('重复的口头禅被过滤','按本群避免重复“正体不明”的开关处理，减少重复发言。'),retry_scheduled:{label:'临时故障后安排等待重试',advice:'只在回复仍有效时再次尝试；结果不明确的发送不会自动重发。',tone:'waiting'},plugin_failure:{label:'本群插件处理未完成',advice:'查看插件错误统计、本群插件开关和素材状态。',tone:'error'},send_rejected:diagnosticInfo('OneBotRejected'),retryable_before_send:diagnosticInfo('RetryableBeforeSend'),
+    duplicate:normal('重复消息已忽略','避免重复触发同一条本群消息。'),self_message:normal('机器人自身消息','不会把自身发言当作新的接话触发。'),wrong_group:normal('消息不属于当前目标群','只处理已参与配置对应的本群消息。'),
+    paused:normal('本群陪聊已暂停','按需要检查本群接话开关或临时安静状态。'),probability:normal('接话概率未命中','按本群接话概率判断，未命中会保持安静。'),
+    collecting:normal('正在等待连续发言结束','先收集同一话题，再决定如何接话；等待不会计作跳过。'),incomplete:normal('句子像是尚未说完','按未完句等待设置多等一会，不打断群友。'),
+    message_budget:diagnosticInfo('MessageLimit'),model_budget:diagnosticInfo('HourlyBudget'),account_budget:diagnosticInfo('HourlyBudget'),
+    model_queue:{label:'正在共用模型队列中等待',advice:'等待在途请求完成；所有群的接话、天网和学习共享模型队列。',tone:'waiting'},model_cooldown:{label:'模型服务退避或限流等待',advice:'等待共用服务恢复；提高触发概率不会解除服务限流。',tone:'waiting'},
+    no_intent:normal('这轮语境没有接话意图','未选择公开回复，等待新的正常对话。'),empty_reply:normal('这轮没有可发送的回复','生成结果没有公开发言内容，保持安静。'),
+    security_input:normal('消息未通过输入安全检查','不执行来自群消息的越权后台指令，等待正常新消息。'),security_output:diagnosticInfo('SecurityBlocked'),
+    superseded:diagnosticInfo('ReplySuperseded'),connection_unavailable:diagnosticInfo('Disconnected'),plugin_limit:{label:'插件达到本群使用上限',advice:'检查本群插件每日限额与共享消息额度，等待额度恢复。',tone:'waiting'},reconciled_confirmed:normal('已从 QQ 历史核验发送成功','这条消息已确认发送，不会再次发送。'),
+    api_failure:{label:'模型或接口请求未完成',advice:'查看本页问题统计与最新模型实测结果。',tone:'error'},unknown_outcome:diagnosticInfo('UnknownOutcome'),expired:diagnosticInfo('ReplyExpired')
+  };
+  const aliases={HumanMessage:'received',AcceptedMention:'queued',AcceptedMessage:'queued',QueueCapacity:'collection_capacity',QuietMode:'quiet_mode',WaitingConnection:'connection_unavailable',ReplyCooldown:'cooldown',HourlyBudget:'hourly_budget',OwnerControl:'owner_control',SecurityInputBlocked:'security_input',ChallengeFiltered:'challenge_filtered',MentionOnly:'mention_only',MentionProbability:'mention_probability',ReplyExpired:'reply_expired',ProactiveTopic:'ready',PluginCommand:'ready',FixedReply:'ready',MentionReply:'ready',OrdinaryReply:'ready',PluginResult:'generated',ModelReply:'generated',ModelSilent:'model_silent',SecurityOutputBlocked:'security_output',CatchphraseFiltered:'catchphrase_filtered',Superseded:'superseded',RetryScheduled:'retry_scheduled',PluginFailure:'plugin_failure',ModelFailure:'api_failure',OneBotRejected:'send_rejected',RetryableBeforeSend:'retryable_before_send',UnknownDelivery:'unknown_outcome',OneBotConfirmed:'sent',ReconciledConfirmed:'reconciled_confirmed'};
+  if(typeof key==='string'&&Object.hasOwn(aliases,key))key=aliases[key];
+  return typeof key==='string'&&Object.hasOwn(reasons,key)?reasons[key]:{label:'原因尚未分类',advice:'仅展示后台已确认的原因分类；未知原因原文不会在此显示。',tone:'error'};
+}
+function resetReplyHealth(message='打开本页后读取当前群的记录。'){
+  replyHealthRequest++;$('#reply-health-window').textContent=message;$('#reply-health-worker').textContent='当前群后台状态尚未读取。';$('#reply-health-waiting').textContent='等待记录尚未读取。';
+  for(const id of ['reply-health-flow','reply-health-outcomes','reply-health-assessment','reply-health-recommendations','reply-health-reasons','reply-health-errors'])$('#'+id).replaceChildren();
+  $('#reply-health-coverage').textContent='历史日志未记录的阶段会显示“未记录”；此页不直接推算回复率。';
+  $('#reply-health-probe').textContent='模型实测尚未读取。';$('#reply-health-refresh').disabled=false;
+}
+function renderReplyHealth(value){
+  const count=value.counts||{},available=value.coverage?.stage_available||{};
+  const display=key=>available[key]===true?healthCount(count[key]):'未记录';
+  const card=(box,key,title,note)=>{const item=document.createElement('div');item.className='reply-stage';const name=document.createElement('small');name.textContent=title;const number=document.createElement('strong');number.textContent=display(key);item.dataset.missing=String(number.textContent==='未记录');const help=document.createElement('small');const unit=({messages:'条消息',jobs:'轮接话任务',onebot_messages:'条发送消息'})[value.stage_units?.[key]];help.textContent=unit?unit+' · '+note:note;item.append(name,number,help);box.append(item);};
+  const flow=$('#reply-health-flow');flow.replaceChildren();for(const [key,title,note] of [['received','① 收到消息','收到的本群消息记录'],['triggered','② 进入接话','进入回复判断的记录'],['generated','③ 生成成功','生成完成的记录'],['confirmed','④ 确认发送','获得发送确认的记录']])card(flow,key,title,note);
+  const outcomes=$('#reply-health-outcomes');outcomes.replaceChildren();for(const [key,title,note] of [['skipped','保持安静 / 跳过','可能是正常的接话规则'],['send_failed','明确发送失败','查看错误与发送记录'],['send_unknown','发送尚未确认','必须先在 QQ 核验'],['expired','回复已过期','不会补发旧内容']])card(outcomes,key,title,note);
+  const window=value.window||{};
+  $('#reply-health-window').textContent='统计范围：'+healthTime(window.start)+' 至 '+healthTime(window.end)+' · 读取于 '+healthTime(value.sampled_at);
+  const worker=value.worker||{},states={idle:'空闲',running:'运行中',starting:'启动中',reconnecting:'等待 QQ 重连',waiting_connection:'等待 QQ 连接',stopping:'正在停止',stopped:'已停止',error:'后台异常'};
+  const state=typeof worker.state==='string'&&Object.hasOwn(states,worker.state)?states[worker.state]:'状态待确认';
+  $('#reply-health-worker').textContent='当前群后台：'+state+' · '+(worker.realtime===true&&worker.fresh===true?'实时状态':'历史或非实时状态，不能证明当前已接通')+' · 状态更新时间：'+healthTime(worker.source_time);
+  const waiting=value.waiting;
+  let waitingText='本窗口进入收集队列：'+display('queued')+(available.queued===true?' 条消息。':'。');
+  if(waiting&&typeof waiting==='object')waitingText+=' 最近等待记录：'+healthReason(waiting.reason_key).label+' · 待判断 '+healthCount(waiting.pending)+' 条 · '+healthTime(waiting.since)+'。只代表该记录时刻，实时进度见下方。';
+  else waitingText+=' 尚未留下独立的等待记录；等待不会计作跳过接话。';
+  $('#reply-health-waiting').textContent=waitingText;
+  const coverage=[];
+  if(value.coverage?.complete!==true)coverage.push('记录未覆盖完整链路：显示“未记录”的阶段不等于零。');
+  if(window.partial===true)coverage.push('只覆盖时间范围内实际留下的日志；不代表后台全程运行。');
+  coverage.push('实际记录时间：'+healthTime(window.observed_from)+' 至 '+healthTime(window.observed_to)+'。');
+  const legacy=value.coverage?.legacy_http_errors_without_status;if(typeof legacy==='number'&&Number.isSafeInteger(legacy)&&legacy>0)coverage.push('其中 '+legacy+' 次旧模型错误未记录 HTTP 状态码，无法还原当时的原因。');
+  for(const note of (Array.isArray(value.coverage?.notes)?value.coverage.notes:[]).slice(0,8))if(typeof note==='string'&&note.trim())coverage.push(note.slice(0,400));
+  coverage.push('各阶段按日志次数汇总，可能包含分条发送或插件记录；不直接相除为回复率。');
+  $('#reply-health-coverage').textContent=coverage.join('\n');
+  const assessment=$('#reply-health-assessment');assessment.replaceChildren();
+  for(const item of (Array.isArray(value.assessment)?value.assessment:[]).slice(0,12)){
+    if(!['info','warning','blocked'].includes(item.level)||typeof item.message!=='string'||!item.message.trim())continue;
+    const box=document.createElement('div');box.className='result diagnostic-card';box.dataset.tone=item.level==='info'?'normal':item.level==='warning'?'waiting':'manual';
+    const badge=document.createElement('span');badge.className='badge';badge.textContent=({info:'情况说明',warning:'需要关注',blocked:'当前阻碍'})[item.level];const text=document.createElement('p');text.textContent=item.message.slice(0,600);box.append(badge,text);assessment.append(box);
+  }
+  const probe=value.model_probe||{},latest=probe.latest||{};
+  let probeText='尚未进行模型实际生成测试；“模型与连接”的测试会发送固定短文本，不读取群聊。';
+  if(probe.available===true&&typeof latest.ok==='boolean'){
+    probeText='最近模型实测：'+(latest.ok?'生成请求通过':diagnosticInfo(latest.code,'model').label)+' · '+healthTime(latest.time)+'。';
+    if(typeof latest.duration_ms==='number'&&Number.isFinite(latest.duration_ms)&&latest.duration_ms>=0)probeText+=' 耗时 '+(latest.duration_ms/1000).toFixed(1)+' 秒。';
+    probeText+=probe.fresh===true?' 在5分钟有效期内。':' 已过期，不代表当前可用。';
+    probeText+=probe.applies_to_saved_config===true?' 对应已保存模型配置。':' 来自草稿或旧配置，不能证明当前后台模型可用。';
+    if(!latest.ok)probeText+=' 建议：'+diagnosticInfo(latest.code,'model').advice;
+  }
+  $('#reply-health-probe').textContent=probeText;
+  const recommendations=$('#reply-health-recommendations');recommendations.replaceChildren();
+  const adviceCodes=new Set(['TimeBudgetShort','MentionAlreadyHigh','CooldownAlreadyShort']);
+  for(const item of (Array.isArray(value.recommendations?.advice)?value.recommendations.advice:[]).slice(0,8)){
+    if(!adviceCodes.has(item.code)||typeof item.message!=='string')continue;
+    const box=document.createElement('div');box.className='note';const title=document.createElement('strong');title.textContent=item.message.slice(0,300);box.append(title);
+    for(const text of [item.detail,item.action])if(typeof text==='string'&&text.trim()){const line=document.createElement('p');line.textContent=text.slice(0,400);box.append(line);}
+    if(item.code==='TimeBudgetShort'){const suggested=value.recommendations?.suggested_runtime?.reply_ttl;if(typeof suggested==='number'&&Number.isSafeInteger(suggested)&&suggested>=30&&suggested<=180){const line=document.createElement('small');line.textContent='建议本群回复有效期：'+suggested+' 秒。需在“聊天节奏与记忆”自行调整并保存；本页不会覆盖草稿。';box.append(line);}}
+    recommendations.append(box);
+  }
+  const fill=(box,rows,describe,category)=>{
+    box.replaceChildren();if(!rows.length){const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=4;cell.textContent='此时间范围内暂无可用记录。';row.append(cell);box.append(row);return;}
+    for(const value of rows.slice(0,40)){const info=describe(value),row=document.createElement('tr'),summary=document.createElement('td'),name=document.createElement('span');name.textContent=info.label;const advice=document.createElement('small');advice.textContent=info.advice;summary.append(name,advice);row.append(summary);for(const text of [category(value),healthCount(value.count),healthTime(value.last_at)]){const cell=document.createElement('td');cell.textContent=text;row.append(cell);}box.append(row);}
+  };
+  const stageNames={received:'收到消息',queued:'进入收集队列',triggered:'进入接话',skipped:'跳过接话',generated:'生成完成',confirmed:'确认发送',send_failed:'发送失败',send_unknown:'发送待核验',expired:'回复过期'};
+  fill($('#reply-health-reasons'),Array.isArray(value.reasons)?value.reasons.filter(row=>['skipped','expired'].includes(row.stage)):[],row=>healthReason(row.reason_key),row=>typeof row.stage==='string'&&Object.hasOwn(stageNames,row.stage)?stageNames[row.stage]:'阶段未记录');
+  const categoryNames={model:'模型',memory:'记忆',send:'发送',connection:'QQ 连接',plugin:'插件',moderation:'天网',other:'其他'};
+  fill($('#reply-health-errors'),Array.isArray(value.errors)?value.errors:[],row=>diagnosticInfo(row.missing_http_status===true?'HTTPError':row.code,row.category),row=>typeof row.category==='string'&&Object.hasOwn(categoryNames,row.category)?categoryNames[row.category]:'其他');
+}
+async function readReplyHealth(){
+  if(!editingGroup)return;
+  const gid=editingGroup,hours=Number($('#reply-health-hours').value),request=++replyHealthRequest;
+  if(![1,6,24,72,168].includes(hours))return;
+  $('#reply-health-refresh').disabled=true;$('#reply-health-window').textContent='正在读取群 '+gid+' 的回复链路…';
+  try{
+    const value=await api('/api/reply-health?group='+encodeURIComponent(gid)+'&hours='+hours);
+    if(request!==replyHealthRequest||gid!==editingGroup||hours!==Number($('#reply-health-hours').value))return;
+    if(String(value.group)!==gid){resetReplyHealth('统计群不匹配，请重新刷新。');return;}
+    renderReplyHealth(value);
+  }catch(e){if(request===replyHealthRequest&&gid===editingGroup){resetReplyHealth('回复链路暂时无法读取，请稍后重试。');}}
+  finally{if(request===replyHealthRequest)$('#reply-health-refresh').disabled=false;}
+}
+$('#reply-health-refresh').onclick=()=>readReplyHealth();
+$('#reply-health-hours').onchange=()=>{resetReplyHealth('正在切换统计时间范围…');readReplyHealth();};
+$('#reply-health-open-model').onclick=()=>$('#nav button[data-tab="connection-tab"]').click();
+$('#reply-health-open-errors').onclick=()=>$('#nav button[data-tab="errors-tab"]').click();
+$('#nav').addEventListener('click',e=>{if(e.target.closest('[data-tab]')?.dataset.tab==='health-tab')readReplyHealth();});
+
+function learningError(code){return diagnosticInfo(code,'memory').label;}
+function renderLearningHealth(s,active,r){
+  const v=s.learning,cap=lastStatus?.account_limits,setText=text=>{for(const id of ['memory-health','learning-progress'])$('#'+id).textContent=text;};
+  if(!active){setText('本群后台未运行，原始学习采样不保留；启动后重新积累。');return;}
+  if(!v){setText('等待后台上报学习状态。');return;}
+  if(!v.enabled){setText('本群记忆学习已关闭。');return;}
+  const used=s.model_calls_last_hour||0,quota=used>=r.model_calls_hour||(cap?.enabled&&(lastStatus?.account_usage?.models||0)>=cap.model_calls_hour);
+  let text=v.processing?(s.model_queue?.cooldown_seconds>0?'本群样本已收齐，模型限流等待中':s.model_queue?.waiting>0?'本群样本已收齐，正在等待或提炼':'模型正在提炼本群样本'):quota?'等待本群或所有群模型调用额度恢复':v.retry_seconds>0?'样本已保留，约 '+v.retry_seconds+' 秒后可重试':v.ready_count?'完整样本等待提炼':v.sampling_count?'等待后续消息（最接近完成的一份：'+v.after_count+'/10）':'等待机器人发言形成样本（已积累前文 '+v.recent_count+'/10）';
+  text+=' · 采集中 '+v.sampling_count+' 份 · 待处理 '+v.ready_count+' 份';
+  if(v.last_error)text+=' · 最近原因：'+learningError(v.last_error);
+  if(v.last_success)text+=' · 本次运行最近成功：'+new Date(v.last_success*1000).toLocaleTimeString();
+  setText(text);
+}
+function renderConversationProgress(s,active){
+  const el=$('#conversation-progress'),v=s.conversation||{};
+  const names={idle:'等待新消息',ready:'已收齐消息，准备接话',collect:'正在收集连续发言',collecting:'正在收集连续发言',queued:'正在等待模型队列',ratewait:'模型服务限流，等待恢复',rate_wait:'模型服务限流，等待恢复',retry_wait:'正在等待下一次尝试',generating:'模型正在生成回复',pre_send:'回复已生成，正在自然等待',quiet:'本群处于安静模式',connection:'等待QQ连接',cooldown:'等待本群对话冷却',budget:'等待消息或模型额度恢复'};
+  el.textContent=!active?'本群后台未运行，启动后显示接话进度。':!v.phase?'等待后台上报接话进度。':(names[v.phase]||'正在处理本群消息')+(v.remaining>0?' · 约 '+Math.ceil(v.remaining)+' 秒':'')+(v.messages>0?' · 本轮收集 '+v.messages+' 条消息':'');
+  const queue=s.model_queue||{},hasQueue=Object.hasOwn(queue,'active')||Object.hasOwn(queue,'waiting');
+  const text=!active?'本群后台未运行，暂无法读取共用模型队列。':!hasQueue?'等待后台上报共用模型队列。':'共用模型队列：正在请求 '+(queue.active||0)+' 个 · 排队 '+(queue.waiting||0)+' 个'+(queue.cooldown_seconds>0?' · 服务限流等待 '+queue.cooldown_seconds+' 秒':'');
+  $('#model-queue-progress').textContent=text;
+  const globalState=active?s:(lastStatus?.groups||[]).find(row=>row.fresh&&row.model_queue),globalQueue=globalState?.model_queue;
+  $('#model-control-progress').textContent=globalQueue?'所有群共用模型队列：正在请求 '+(globalQueue.active||0)+' 个 · 排队 '+(globalQueue.waiting||0)+' 个'+(globalQueue.cooldown_seconds>0?' · 服务限流等待 '+globalQueue.cooldown_seconds+' 秒':''):'启动任一参与群后显示共用模型队列。';
+}
+function renderModerationIntakeStatus(s,active){
+  const el=$('#moderation-intake-progress'),value=s.moderation_intake;
+  if(!active){el.textContent='当前群后台未运行，启动后显示本群审核筛选计数。';return;}
+  if(!value||typeof value!=='object'){el.textContent='等待后台上报当前群的审核筛选计数。';return;}
+  el.textContent='当前群审核筛选：候选待处理 '+healthCount(value.pending_candidates)+' 条 · 抽检待处理 '+healthCount(value.pending_audits)+' 条\n本次启动累计：审核候选 '+healthCount(value.candidates)+' 条 · 普通抽检 '+healthCount(value.audits)+' 条 · 重复输入去重 '+healthCount(value.deduplicated)+' 条 · 未见筛选信号的普通文字 '+healthCount(value.clean)+' 条。候选和抽检均由模型复核，不代表违规。';
+}
+function renderStatus(){
+  if(!config||!lastStatus)return;
+  const s=selectedState(),r=savedRuntimeGroups[editingGroup]||runtimeDraft(),active=s.fresh&&!s.stop_requested;
+  const applied=active&&s.settings_revision===savedRevision;
+  renderLearningHealth(s,active,r);renderConversationProgress(s,active);renderModerationIntakeStatus(s,active);
+  const names={running:'运行中',waiting_connection:'等待QQ连接',reconnecting:'重连中',starting:'启动中',stopped:'已停止',error:'需要检查'};
+  $('#state').textContent=s.connection_restart?.pending?'正在重启':active?(names[s.state]||s.state):'已停止';
+  $('#connection').textContent='QQ __BOT_ID__ · 群 '+editingGroup+' · '+(active&&s.websocket?'消息连接正常':'未连接 / 等待启动');
+  $('#memory-live').textContent=applied?'本群已应用':active?'本群待应用':'本群启动后生效';$('#token-live').textContent=$('#memory-live').textContent;
+  $('#s-rate').textContent=(s.sent_last_hour||0)+' / '+r.messages_hour;
+  $('#s-skynet').textContent=(s.skynet_enabled??config.moderation.enabled?'开启':'关闭')+' · '+({admin:'管理员',owner:'群主',member:'普通成员'}[s.bot_role]||'待核实');
+  $('#status-detail').textContent='当前群 '+editingGroup+' · 更新：'+(s.time||'—')+'\n本群普通对话冷却：'+r.cooldown_seconds+' 秒\n本群模型调用：'+(s.model_calls_last_hour||0)+' / '+r.model_calls_hour;
+  $('#group-worker-states').textContent=(lastStatus.groups||[]).map(row=>'群 '+row.group+'：'+(row.fresh?(names[row.state]||row.state):'已停止')).join('\n')||'尚无运行中的群';
+  const reasons=[];if(!active)reasons.push('本群后台未运行');else if(!s.websocket)reasons.push('本群正在等待QQ连接');
+  if(r.chat_enabled===false)reasons.push('本群日常陪聊已关闭');if(s.quiet_remaining>0)reasons.push('本群临时安静：剩余'+Math.ceil(s.quiet_remaining/60)+'分钟');if(r.mention_only)reasons.push('本群只在被 @ 时接话');if(s.cooldown_remaining>0)reasons.push('本群冷却剩余 '+s.cooldown_remaining+' 秒');
+  if(s.sent_last_hour>=r.messages_hour)reasons.push('本群消息达到每小时上限');if(s.model_calls_last_hour>=r.model_calls_hour)reasons.push('本群模型调用达到每小时上限');
+  const cap=lastStatus.account_limits,usage=lastStatus.account_usage||{};
+  if(cap?.enabled&&(usage.messages>=cap.messages_hour||usage.models>=cap.model_calls_hour))reasons.push('所有群总额度保护已触发，可在群总览调整');
+  $('#reply-reason').textContent=reasons.join('\n')||'本群可以接话，是否回复取决于语境与 @ 接话概率';
+  $('#account-usage').textContent='所有群过去一小时：'+(usage.messages||0)+' 条消息 · '+(usage.models||0)+' 次模型调用';
+  if(!dirty)$('#save-state').textContent='设置已保存 · 当前群 '+editingGroup+(applied?' 已应用':active?' 等待后台应用':' 启动后生效');
+}
+async function status(){if(statusBusy)return;statusBusy=true;try{lastStatus=await api('/api/status');if(config){renderMultiGroups();showSavedSettings();renderStatus();}}catch(e){$('#connection').textContent='管理服务连接中断，请重新打开页面';}finally{statusBusy=false;}}
+function renderMultiGroups(){
+  if(!config)return;const box=$('#multi-rows');box.replaceChildren();const states=new Map((lastStatus?.groups||[]).map(r=>[String(r.group),r]));
+  for(const gid of groupIds()){
+    const subscription=config.groups.find(r=>String(r.group_id)===gid),state=states.get(gid),p=multiProfile(gid),r=config.runtime_groups?.[gid]||config.runtime,learning=config.learning_groups?.[gid];
+    const tr=document.createElement('tr');if(gid===editingGroup)tr.className='selected-group';
+    const cell=text=>{const td=document.createElement('td');td.textContent=text;tr.append(td);return td;};
+    cell((multiGroupNames[gid]||'群')+' · '+gid);
+    const check=document.createElement('input');check.type='checkbox';check.checked=!!subscription?.enabled;check.setAttribute('aria-label','参与群 '+gid);check.onchange=()=>{try{collectPluginDraft();setMultiGroup(gid,check.checked);}catch(e){toast(e.message);renderMultiGroups();}};cell('').append(check);
+    cell(state?.fresh?({running:'运行中',waiting_connection:'等待连接',reconnecting:'重连中',starting:'启动中'}[state.state]||state.state):subscription?.enabled?'待启动':'未参与');
+    cell(r.messages_hour+' 条/时 · 冷却 '+r.cooldown_seconds+' 秒');cell(r.context_messages+' 条 · '+r.output_tokens+' tokens'+(learning?.enabled?' · 学习开':' · 学习关'));cell(p.enabled?'开启 '+Object.values(p.features||{}).filter(Boolean).length+' 项':'关闭');
+    const actions=cell('');for(const [label,tab] of [['节奏与记忆','rhythm-tab'],['插件','plugins-tab']]){const b=document.createElement('button');b.textContent=label;b.onclick=()=>selectWorkspace(gid,tab);actions.append(b);}box.append(tr);
+  }
+  const cap=config.account_limits;$('#multi-summary').textContent='参与草稿 '+config.groups.filter(r=>r.enabled).length+' 个群 · 实际运行 '+(lastStatus?.groups||[]).filter(r=>r.fresh).length+' 个群 · '+(cap?.enabled?'所有群总保护 '+cap.messages_hour+' 条/时':'总额度保护关闭，按各群上限运行');
+}
+function addMultiGroup(value){
+  if(!/^\d{5,12}$/.test(value))throw Error('请填写有效群号');const gid=String(Number(value));
+  collectRuntimeDraft();collectPluginDraft();collectLearningDraft();
+  if(!config.groups.some(g=>String(g.group_id)===gid)){if(config.groups.length>=20)throw Error('最多配置20个参与群');config.groups.push({group_id:Number(gid),enabled:false});}
+  config.plugin_groups[gid]??={enabled:false,images_enabled:true,daily_limit:20,image_daily_limit:5,hour_start:8,hour_end:23,features:{},texts:{}};config.runtime_groups[gid]??=clone(config.runtime);
+  edited();selectWorkspace(gid,'rhythm-tab');toast('已创建独立群草稿；参与、插件和学习开关需单独开启。');
+}
+$('#plugin-add-group').onclick=()=>{try{addMultiGroup($('#plugin-new-group').value.trim());}catch(e){toast(e.message);}};
+$('#plugin-joined-groups').onclick=()=>$('#nav button[data-tab="groups-tab"]').click();
+for(const [id,minutes] of [['quiet-30',30],['quiet-120',120],['quiet-resume',0]])$('#'+id).onclick=async()=>{try{await api('/api/quiet',{minutes,group_id:Number(editingGroup)});await status();toast('当前群临时安静已更新');}catch(e){toast(e.message);}};
+$('#diagnose').onclick=async()=>{const gid=editingGroup;$('#diagnosis').textContent='正在检查当前群…';try{const v=await api('/api/diagnostics?group_id='+gid);if(editingGroup===gid)$('#diagnosis').textContent=v.checks.map(c=>(c.ok?'✓ ':'○ ')+c.name+'：'+c.message).join('\n');}catch(e){if(editingGroup===gid)$('#diagnosis').textContent=e.message;}};
+$('#refresh-events').onclick=async()=>{const gid=editingGroup;try{const v=await api('/api/events?group_id='+gid);if(editingGroup===gid)$('#recent-events').textContent=v.events.map(e=>e.time+'　'+e.message).join('\n')||'当前群暂无记录';}catch(e){if(editingGroup===gid)toast(e.message);}};
+
+const snowBridgeOrigin='http://127.0.0.1:5101',snowBridgeURL=snowBridgeOrigin+'/';
+let snowStatusBusy=false,snowFrameLoaded=false;
+function showSnowBridgeStatus(status,message){
+  const names={ready:'QQ 控制台已连接，可在下方操作。',offline:'SnowLuma 尚未连接。请打开运行电脑上的官方控制台后重新检查。',login_required:'请先在下方登录 SnowLuma 控制台。',forbidden:'QQ 控制台暂不可用，请确认主管理员登录和管理连接。'};
+  $('#snow-status').textContent=message||names[status]||'正在读取 QQ 控制台状态…';
+  $('#snow-offline').hidden=status!=='offline';
+  if(status==='offline'||status==='forbidden')$('#snow-frame').hidden=true;
+  else if(snowFrameLoaded)$('#snow-frame').hidden=false;
+}
+function loadSnowFrame(force=false){
+  const frame=$('#snow-frame');
+  if(!snowFrameLoaded||force){frame.src=snowBridgeURL;snowFrameLoaded=true;}
+  frame.hidden=false;
+}
+async function readSnowStatus(force=false){
+  if(snowStatusBusy)return;snowStatusBusy=true;$('#snow-check').disabled=true;
+  try{
+    const v=await api('/api/snowluma/status');
+    if(v.available&&v.bridge_available){showSnowBridgeStatus('ready',v.message);loadSnowFrame(force);}
+    else showSnowBridgeStatus('offline',v.message||(v.bridge_available?'SnowLuma 尚未连接，请打开运行电脑上的官方控制台后重新检查。':'QQ 控制台管理连接尚未就绪，请重新打开统一快捷方式。'));
+  }catch(e){showSnowBridgeStatus('forbidden',e.message);}finally{snowStatusBusy=false;$('#snow-check').disabled=false;}
+}
+function handleSnowBridgeMessage(event){
+  const frame=$('#snow-frame');
+  if(event.origin!==snowBridgeOrigin||event.source!==frame.contentWindow||event.data?.source!=='nue-snowluma-bridge')return;
+  if(!['ready','offline','login_required','forbidden'].includes(event.data.status))return;
+  showSnowBridgeStatus(event.data.status);
+}
+window.addEventListener('message',handleSnowBridgeMessage);
+$('#nav').addEventListener('click',e=>{if(e.target.closest('[data-tab]')?.dataset.tab==='snowluma-tab')readSnowStatus().catch(e=>toast(e.message));});
+$('#open-snow-tab').onclick=()=>$('#nav button[data-tab="snowluma-tab"]').click();
+$('#snow-check').onclick=()=>readSnowStatus();
+$('#snow-refresh').onclick=()=>{if(snowFrameLoaded&&!confirm('刷新 QQ 控制台会丢弃该页未保存修改。继续刷新？'))return;readSnowStatus(true);};
+load().then(status).catch(e=>toast(e.message));setInterval(status,3000);
+let errorOffset=0,deliveryOffset=0;
+const deliveryVerifications=new Map(),deliveryKey=(gid,row)=>gid+':'+row.id;
+const deliveryNames={unsent:'未发送',failed:'明确失败',queued:'等待本群后台重发',preparing:'正在准备',pending:'正在发送，等待回执',unknown:'发送结果不明确',confirmed:'已确认发送',dismissed:'已归档',expired:'已过期，不能重发'};
+function deliveryReason(code){return diagnosticInfo(code,'send').label;}
+async function readErrors(){
+  const gid=editingGroup,offset=errorOffset,category=$('#error-category').value;
+  const v=await api('/api/errors?group_id='+gid+'&offset='+offset+'&category='+category);
+  if(gid!==editingGroup||offset!==errorOffset||category!==$('#error-category').value)return;
+  $('#error-count').textContent='共 '+v.total+' 条 · 第 '+(offset/50+1)+' 页'+(v.truncated?' · 仅读取最近2MB日志':'');
+  $('#error-prev').disabled=offset===0;$('#error-next').disabled=offset+50>=v.total;
+  const box=$('#error-list');box.replaceChildren();
+  if(!v.entries.length){box.textContent='本群暂未记录此类运行诊断。';return;}
+  for(const row of v.entries){
+    const info=diagnosticEntryInfo(row),card=document.createElement('article');card.className='result diagnostic-card';card.dataset.tone=info.tone;
+    const heading=document.createElement('div');heading.className='actions';const badge=document.createElement('span');badge.className='badge';badge.textContent=info.badge;
+    const categories={model:'模型',memory:'记忆',send:'发送',connection:'连接',plugin:'插件',moderation:'天网',other:'其他'},stamp=document.createElement('small');stamp.textContent=healthTime(row.time)+' · '+(typeof row.category==='string'&&Object.hasOwn(categories,row.category)?categories[row.category]:'其他');heading.append(badge,stamp);card.append(heading);
+    const title=document.createElement('p');title.textContent=info.label;card.append(title);
+    const advice=document.createElement('p');advice.className='muted';advice.textContent='建议：'+info.advice;card.append(advice);
+    const detail=diagnosticEntryDetails(row);if(detail){const meta=document.createElement('small');meta.textContent=detail;card.append(meta);}
+    if(typeof row.retry_seconds==='number'&&Number.isFinite(row.retry_seconds)&&row.retry_seconds>0&&row.retry_seconds<=3600){const wait=document.createElement('small');wait.textContent='后台记录的下次可尝试时间：约 '+Math.ceil(row.retry_seconds)+' 秒后；过期内容仍会放弃。';card.append(wait);}
+    box.append(card);
+  }
+}
+async function deliveryAction(row,action,gid,confirmUnknown=false){
+  let confirmed=false;const key=deliveryKey(gid,row);
+  if(action==='retry'){
+    if(!['unsent','failed'].includes(row.state)||deliveryExpired(row)){toast('此条内容不能重发，请刷新发送记录。');return;}
+    if(!confirm('将这条已有内容加入群 '+gid+' 的重发队列？请先确认内容尚未过时。'))return;
+  }
+  if(action==='confirm_sent'){if(!confirm('我已在QQ确认这条消息已发送，不再重发？'))return;confirmed=true;}
+  if(action==='confirm_unsent'&&(!confirmUnknown||row.state!=='unknown'||!deliveryVerifications.has(key))){toast('请先核验记录，再勾选已在QQ人工确认未发送。');return;}
+  try{
+    const body={group_id:Number(gid),id:row.id,action,confirmed};
+    if(action==='confirm_unsent')body.confirm_unknown=true;
+    const result=await api('/api/delivery',body);
+    if(action==='verify')deliveryVerifications.set(key,result.message);
+    toast(result.message);if(gid===editingGroup)await readDeliveries();
+  }catch(e){
+    if(action==='verify'){deliveryVerifications.set(key,'自动核验未完成：'+e.message+'。请在QQ人工核对，无法确定时不要确认。');if(gid===editingGroup)await readDeliveries().catch(()=>{});}
+    toast(e.message);
+  }
+}
+function deliveryExpired(row){return row.state==='expired'||(['unsent','failed','queued'].includes(row.state)&&row.meta?.expires>0&&row.meta.expires<=Date.now()/1000);}
+async function readDeliveries(){
+  const gid=editingGroup,offset=deliveryOffset,v=await api('/api/deliveries?group_id='+gid+'&offset='+offset);
+  if(gid!==editingGroup||offset!==deliveryOffset)return;
+  $('#delivery-count').textContent='共 '+v.total+' 条 · 第 '+(offset/50+1)+' 页';$('#delivery-prev').disabled=offset===0;$('#delivery-next').disabled=offset+50>=v.total;
+  const box=$('#delivery-list');box.replaceChildren();if(!v.entries.length){box.textContent='暂无发送记录；从本次更新后的新回复开始记录。';return;}
+  for(const row of v.entries){
+    const expired=deliveryExpired(row),summary=String(row.summary||''),key=deliveryKey(gid,row);
+    const card=document.createElement('details');card.className='card';const title=document.createElement('summary');title.textContent=new Date(row.created*1000).toLocaleString()+' · '+(expired?deliveryNames.expired:deliveryNames[row.state]||row.state)+' · '+summary.slice(0,60);card.append(title);
+    const body=document.createElement('p');body.style.whiteSpace='pre-wrap';
+    const issue=row.error?diagnosticInfo(row.error,'send',row.state==='unknown'?'send_unknown':''):null;
+    let detail=summary+'\n发送尝试 '+row.attempts+' 次'+(issue?' · '+issue.label+'\n建议：'+issue.advice:'');
+    if(row.meta?.auto_attempts)detail+='\n自动尝试 '+row.meta.auto_attempts+' 次';
+    if(row.meta?.expires&&!['confirmed','dismissed'].includes(row.state))detail+='\n回复有效至 '+new Date(row.meta.expires*1000).toLocaleString();
+    if(!expired&&row.not_before>Date.now()/1000&&['unsent','failed','queued'].includes(row.state))detail+='\n下一次可尝试约 '+Math.ceil(row.not_before-Date.now()/1000)+' 秒后（仍须满足本群开关和额度）';
+    body.textContent=detail;card.append(body);
+    const actions=document.createElement('div');actions.className='actions';card.append(actions);
+    const button=(action,label,disabled=false)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.disabled=disabled;b.onclick=async()=>{b.disabled=true;try{await deliveryAction(row,action,gid);}finally{b.disabled=disabled;}};actions.append(b);return b;};
+    if(expired)button('retry','已过期，不能重发',true);
+    else if(['unsent','failed'].includes(row.state))button('retry','加入重发队列');
+    if(['unknown','pending'].includes(row.state))button('verify','核验QQ发送记录');
+    if(row.state==='unknown'){
+      button('confirm_sent','确认已发送');
+      const note=document.createElement('p');note.className='note';note.textContent=deliveryVerifications.get(key)||'先核验QQ发送记录；未找到记录不能证明未发送。请再亲自查看QQ，这条消息不会自动重发。';card.append(note);
+      const label=document.createElement('label');label.className='delivery-confirm';
+      const check=document.createElement('input');check.type='checkbox';check.disabled=!deliveryVerifications.has(key);check.setAttribute('aria-label','我已在QQ确认此条未发送并放弃 '+row.id);
+      const text=document.createElement('span');text.textContent='我已在QQ人工核对，确认这条消息未发送，并放弃发送。';const hint=document.createElement('small');hint.textContent='勾选后仅清除这条待处理内容，不会重发；无法确定时请保留记录。';text.append(hint);label.append(check,text);card.append(label);
+      const abandon=document.createElement('button');abandon.type='button';abandon.className='danger';abandon.textContent='确认未发送并放弃';abandon.disabled=true;
+      check.onchange=()=>abandon.disabled=!check.checked;abandon.onclick=async()=>{if(!check.checked)return;abandon.disabled=true;try{await deliveryAction(row,'confirm_unsent',gid,check.checked);}finally{abandon.disabled=!check.checked;}};card.append(abandon);
+    }
+    if(!expired&&['unsent','failed','queued'].includes(row.state))button('dismiss','归档，不再发送');
+    box.append(card);
+  }
+}
+$('#error-refresh').onclick=()=>readErrors().catch(e=>toast(e.message));$('#delivery-refresh').onclick=()=>readDeliveries().catch(e=>toast(e.message));
+$('#error-category').onchange=()=>{errorOffset=0;readErrors().catch(e=>toast(e.message));};
+$('#error-prev').onclick=()=>{errorOffset=Math.max(0,errorOffset-50);readErrors().catch(e=>toast(e.message));};$('#error-next').onclick=()=>{errorOffset+=50;readErrors().catch(e=>toast(e.message));};
+$('#delivery-prev').onclick=()=>{deliveryOffset=Math.max(0,deliveryOffset-50);readDeliveries().catch(e=>toast(e.message));};$('#delivery-next').onclick=()=>{deliveryOffset+=50;readDeliveries().catch(e=>toast(e.message));};
+$('#nav').addEventListener('click',e=>{if(e.target.closest('[data-tab]')?.dataset.tab==='errors-tab'){readErrors().catch(e=>toast(e.message));readDeliveries().catch(e=>toast(e.message));}});
+
+function applySnowDeepLink(){
+  if(panelSessionRole!=='admin'||window.location.hash!=='#snowluma-tab')return;
+  const button=$('#nav button[data-tab="snowluma-tab"]');
+  if(button&&!button.hidden)button.click();
+}
+window.addEventListener('hashchange',applySnowDeepLink);
+</script></body></html>

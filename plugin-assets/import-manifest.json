@@ -1,0 +1,29 @@
+{
+  "directories": [
+    "AnimeImageFetcher",
+    "AutoReplyPlugin",
+    "BilibiliUrlParser",
+    "DicePlugin",
+    "FortuneDraw",
+    "Forward",
+    "Forward_old",
+    "FreeChatLite",
+    "FreeChatLite_past",
+    "FreeChatLite_past1",
+    "FreeChatLite_past2",
+    "HelpPlugin",
+    "HourlyNotifier",
+    "JRRPChecker",
+    "Jmsearcher",
+    "KimiChatLite",
+    "KimiChatLite_past",
+    "Myplugin",
+    "Reply",
+    "TarotReader",
+    "Test",
+    "TouhouOriginalMusicDraw",
+    "TouhouSpellCardDraw",
+    "WhatToEat"
+  ],
+  "note": "Public code distribution contains no original plugin media; assets must be supplied locally."
+}
